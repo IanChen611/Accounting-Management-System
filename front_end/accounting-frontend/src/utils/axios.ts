@@ -25,7 +25,7 @@ apiClient.interceptors.request.use(
 // 回應攔截器
 apiClient.interceptors.response.use(
   (response) => {
-    return response.data
+    return response
   },
   (error) => {
     if (error.response?.status === 401) {

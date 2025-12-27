@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { InvoicesModule } from './invoices/invoices.module';
+import { CustomersModule } from './customers/customers.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { AppService } from './app.service';
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       synchronize: true, // 開發時使用,正式環境要改為 false
     }),
+    InvoicesModule,
+    CustomersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

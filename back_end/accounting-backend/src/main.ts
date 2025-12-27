@@ -7,7 +7,7 @@ async function bootstrap() {
 
   // 啟用 CORS
   app.enableCors({
-    origin: 'http://localhost:5173', // Vue.js 開發伺服器位址
+    origin: ['http://localhost:5173', 'http://localhost:5174'], // Vue.js 開發伺服器位址
     credentials: true,
   });
 

@@ -1,85 +1,115 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
-import HelloWorld from './components/HelloWorld.vue'
+import { RouterView, useRouter, useRoute } from 'vue-router'
+import { Document, HomeFilled, InfoFilled, User } from '@element-plus/icons-vue'
+
+const router = useRouter()
+const route = useRoute()
+
+const getActiveMenu = () => {
+  const path = route.path
+  // 如果路徑以 /invoices 開頭（包含子路由），回傳 /invoices
+  if (path.startsWith('/invoices')) {
+    return '/invoices'
+  }
+  // 如果路徑以 /customers 開頭，回傳 /customers
+  if (path.startsWith('/customers')) {
+    return '/customers'
+  }
+  // 其他情況回傳實際路徑
+  return path
+}
+
+const handleMenuSelect = (key: string) => {
+  router.push(key)
+}
 </script>
 
 <template>
-  <header>
-    <img alt="Vue logo" class="logo" src="@/assets/logo.svg" width="125" height="125" />
+  <el-container class="layout-container">
+    <el-header class="header">
+      <div class="header-content">
+        <h1 class="title">會計管理系統</h1>
+        <el-menu
+          mode="horizontal"
+          :default-active="getActiveMenu()"
+          class="navbar"
+          @select="handleMenuSelect"
+        >
+          <el-menu-item index="/">
+            <el-icon><HomeFilled /></el-icon>
+            首頁
+          </el-menu-item>
+          <el-menu-item index="/invoices">
+            <el-icon><Document /></el-icon>
+            發票管理
+          </el-menu-item>
+          <el-menu-item index="/customers">
+            <el-icon><User /></el-icon>
+            客戶管理
+          </el-menu-item>
+          <el-menu-item index="/about">
+            <el-icon><InfoFilled /></el-icon>
+            關於
+          </el-menu-item>
+        </el-menu>
+      </div>
+    </el-header>
 
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-
-      <nav>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about">About</RouterLink>
-      </nav>
-    </div>
-  </header>
-
-  <RouterView />
+    <el-main class="main-content">
+      <RouterView />
+    </el-main>
+  </el-container>
 </template>
 
 <style scoped>
-header {
-  line-height: 1.5;
-  max-height: 100vh;
+.layout-container {
+  min-height: 100vh;
 }
 
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
+.header {
+  background-color: #fff;
+  border-bottom: 1px solid #e4e7ed;
+  padding: 0;
+  height: 60px;
+  line-height: 60px;
 }
 
-nav {
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  padding: 0 20px;
   width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
 }
 
-nav a.router-link-exact-active {
-  color: var(--color-text);
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+  white-space: nowrap;
 }
 
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
+.navbar {
+  flex: 1;
+  border: none;
 }
 
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
+.main-content {
+  background-color: #f5f7fa;
+  padding: 0 !important;
+  min-height: calc(100vh - 60px);
+  width: 100%;
 }
 
-nav a:first-of-type {
-  border: 0;
+:deep(.el-menu-item) {
+  height: 60px;
+  line-height: 60px;
 }
 
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
-
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
-
-    padding: 1rem 0;
-    margin-top: 1rem;
-  }
+/* 移除 Element Plus 預設的最大寬度限制 */
+:deep(.el-main) {
+  padding: 0 !important;
+  max-width: none !important;
 }
 </style>

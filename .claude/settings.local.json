@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(npm run start:dev:*)",
+      "Bash(npm install:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(timeout /t 10)",
+      "Bash(taskkill:*)",
+      "Bash(ping:*)",
+      "Bash(cat:*)",
+      "Bash(del test_export.csv test_export_date.csv)",
+      "Bash(timeout /t 5)",
+      "Bash(echo:*)",
+      "Bash(dir:*)",
+      "Bash(ls:*)",
+      "Bash(node read-excel.js:*)",
+      "Bash(node import-customers.js:*)",
+      "Bash(node import-missing-customers.js:*)"
+    ]
+  }
+}
