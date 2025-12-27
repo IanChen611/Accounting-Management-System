@@ -17,6 +17,9 @@ export class Customer {
   @Column({ type: 'varchar', length: 100, comment: '客戶名稱' })
   name: string;
 
+  @Column({ type: 'varchar', length: 10, nullable: true, comment: '郵遞區號' })
+  zipCode: string;
+
   @Column({ type: 'varchar', length: 200, nullable: true, comment: '聯絡地址' })
   address: string;
 

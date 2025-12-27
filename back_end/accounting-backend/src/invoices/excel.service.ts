@@ -59,7 +59,36 @@ export class ExcelService {
 
     // 填入資料
     invoices.forEach((invoice) => {
-      if (invoice.items && invoice.items.length > 0) {
+      // 處理作廢發票（沒有商品項目）
+      if (invoice.isVoided || !invoice.items || invoice.items.length === 0) {
+        const row = worksheet.addRow([
+          '作廢',
+          invoice.invoiceNumber,
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+        ]);
+
+        // 設定儲存格樣式
+        row.eachCell((cell, colNumber) => {
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' },
+          };
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        });
+
+        currentRow++;
+      } else {
+        // 處理正常發票
         const startRow = currentRow;
         const itemCount = invoice.items.length;
 

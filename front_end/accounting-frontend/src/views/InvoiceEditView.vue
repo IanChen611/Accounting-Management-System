@@ -41,7 +41,7 @@ const fetchInvoice = async () => {
   loading.value = true
   try {
     const response = await invoiceApi.getInvoice(invoiceId)
-    invoice.value = response
+    invoice.value = response.data
   } catch (error) {
     ElMessage.error('載入發票資料失敗')
     console.error(error)

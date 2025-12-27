@@ -18,10 +18,16 @@
     </el-form-item>
 
     <el-form-item label="發票號碼" prop="invoiceNumber">
-      <el-input v-model="formData.invoiceNumber" placeholder="請輸入發票號碼" />
+      <el-input v-model="formData.invoiceNumber" placeholder="請輸入發票號碼（格式：XX12345678）" />
+      <div class="field-hint">格式為兩個大寫英文字母 + 八位數字，例如：AB12345678</div>
     </el-form-item>
 
-    <el-form-item label="客戶代號" prop="customerCode">
+    <el-form-item label="作廢發票">
+      <el-switch v-model="formData.isVoided" @change="handleVoidedChange" />
+      <span class="void-hint">勾選此項表示此發票為作廢發票，不需填寫客戶及商品資料</span>
+    </el-form-item>
+
+    <el-form-item label="客戶代號" prop="customerCode" v-if="!formData.isVoided">
       <el-input
         v-model="formData.customerCode"
         placeholder="請輸入客戶代號"
@@ -29,13 +35,14 @@
       />
     </el-form-item>
 
-    <el-form-item label="買受人" prop="buyer">
+    <el-form-item label="買受人" prop="buyer" v-if="!formData.isVoided">
       <el-input v-model="formData.buyer" placeholder="請輸入買受人" />
     </el-form-item>
 
-    <el-divider content-position="left">商品明細</el-divider>
+    <el-divider content-position="left" v-if="!formData.isVoided">商品明細</el-divider>
 
     <div
+      v-if="!formData.isVoided"
       v-for="(item, index) in formData.items"
       :key="index"
       class="item-row"
@@ -118,12 +125,13 @@
               label-width="80px"
             >
               <el-input-number
-                v-model="item.amount"
+                :model-value="getDisplayAmount(item)"
                 :min="0"
                 :precision="2"
                 :controls="false"
                 style="width: 100%"
-                @change="calculateTotals"
+                :placeholder="isDeductionItem(item.productName) ? '輸入正數，系統自動轉為減項' : '請輸入金額'"
+                @update:model-value="(val) => handleAmountChange(item, val)"
               />
             </el-form-item>
           </el-col>
@@ -131,13 +139,13 @@
       </el-card>
     </div>
 
-    <el-button type="primary" :icon="Plus" @click="addItem" class="add-btn"
+    <el-button v-if="!formData.isVoided" type="primary" :icon="Plus" @click="addItem" class="add-btn"
       >新增商品</el-button
     >
 
-    <el-divider content-position="left">金額統計</el-divider>
+    <el-divider content-position="left" v-if="!formData.isVoided">金額統計</el-divider>
 
-    <el-descriptions :column="1" border class="amount-summary">
+    <el-descriptions v-if="!formData.isVoided" :column="1" border class="amount-summary">
       <el-descriptions-item label="未稅金額">
         <span class="amount-value">NT$ {{ Math.round(formData.taxExcludedAmount || 0) }}</span>
       </el-descriptions-item>
@@ -204,12 +212,20 @@ const formData = reactive<Invoice>({
   ],
   taxExcludedAmount: 0,
   tax: 0,
-  taxIncludedAmount: 0
+  taxIncludedAmount: 0,
+  isVoided: false
 })
 
 const rules: FormRules = {
   invoiceDate: [{ required: true, message: '請選擇發票日期', trigger: 'change' }],
-  invoiceNumber: [{ required: true, message: '請輸入發票號碼', trigger: 'blur' }],
+  invoiceNumber: [
+    { required: true, message: '請輸入發票號碼', trigger: 'blur' },
+    {
+      pattern: /^[A-Z]{2}\d{8}$/,
+      message: '發票號碼格式錯誤，必須為兩個英文字母加八位數字（例如：AB12345678）',
+      trigger: 'blur'
+    }
+  ],
   buyer: [{ required: true, message: '請輸入買受人', trigger: 'blur' }]
 }
 
@@ -217,6 +233,27 @@ const itemRules = {
   productName: [{ required: true, message: '請選擇品名', trigger: 'change' }],
   quantity: [{ required: true, message: '請輸入數量', trigger: 'change' }],
   amount: [{ required: true, message: '請輸入金額', trigger: 'change' }]
+}
+
+// 判斷是否為減項商品
+const isDeductionItem = (productName: string) => {
+  return productName && productName.includes('減')
+}
+
+// 取得顯示金額（絕對值）
+const getDisplayAmount = (item: InvoiceItem) => {
+  return Math.abs(item.amount || 0)
+}
+
+// 處理金額變更
+const handleAmountChange = (item: InvoiceItem, value: number) => {
+  // 如果是減項商品（品名包含「減」），自動轉為負數
+  if (isDeductionItem(item.productName)) {
+    item.amount = -Math.abs(value || 0)
+  } else {
+    item.amount = Math.abs(value || 0)
+  }
+  calculateTotals()
 }
 
 // 計算單價：金額 ÷ 數量
@@ -258,6 +295,28 @@ const removeItem = (index: number) => {
   calculateTotals()
 }
 
+// 處理作廢發票切換
+const handleVoidedChange = (value: boolean) => {
+  if (value) {
+    // 切換為作廢發票時，清空不需要的欄位
+    formData.customerCode = ''
+    formData.buyer = ''
+    formData.items = []
+    formData.taxExcludedAmount = 0
+    formData.tax = 0
+    formData.taxIncludedAmount = 0
+  } else {
+    // 切換回正常發票時，初始化商品項目
+    formData.items = [
+      {
+        productName: '',
+        quantity: 1,
+        amount: 0
+      }
+    ]
+  }
+}
+
 // 處理客戶代號輸入後自動帶入客戶名稱
 const handleCustomerCodeBlur = async () => {
   if (!formData.customerCode) return
@@ -278,7 +337,20 @@ const handleSubmit = async () => {
 
   await formRef.value.validate((valid) => {
     if (valid) {
-      emit('submit', { ...formData })
+      // 如果是作廢發票，確保相關欄位為空
+      if (formData.isVoided) {
+        emit('submit', {
+          ...formData,
+          customerCode: undefined,
+          buyer: '',
+          items: [],
+          taxExcludedAmount: 0,
+          tax: 0,
+          taxIncludedAmount: 0
+        })
+      } else {
+        emit('submit', { ...formData })
+      }
     }
   })
 }
@@ -296,11 +368,41 @@ watch(
   { deep: true }
 )
 
+// 監聽每個商品的品名變化，自動調整金額正負號
+watch(
+  () => formData.items.map(item => item.productName),
+  (newNames, oldNames) => {
+    if (oldNames) {
+      formData.items.forEach((item, index) => {
+        if (newNames[index] !== oldNames[index] && item.amount !== 0) {
+          // 品名改變時，根據新品名重新設定金額正負號
+          if (isDeductionItem(newNames[index])) {
+            // 改成減項商品，轉為負數
+            item.amount = -Math.abs(item.amount)
+          } else {
+            // 改成一般商品，轉為正數
+            item.amount = Math.abs(item.amount)
+          }
+        }
+      })
+      calculateTotals()
+    }
+  }
+)
+
 // 初始化表單數據
 onMounted(() => {
   if (props.initialData) {
     Object.assign(formData, props.initialData)
-    if (!formData.items || formData.items.length === 0) {
+
+    // 轉換 items 中的數字欄位（從 API 回傳的可能是字串）
+    if (formData.items && formData.items.length > 0) {
+      formData.items = formData.items.map(item => ({
+        productName: item.productName,
+        quantity: Number(item.quantity),
+        amount: Number(item.amount)
+      }))
+    } else {
       formData.items = [
         {
           productName: '',
@@ -391,5 +493,17 @@ onMounted(() => {
 :deep(.el-card__header) {
   background-color: #f0f0f0;
   border-bottom: 1px solid #e0e0e0;
+}
+
+.field-hint {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.void-hint {
+  margin-left: 10px;
+  font-size: 13px;
+  color: #606266;
 }
 </style>

@@ -48,37 +48,48 @@ export class InvoicesService {
   }
 
   async create(createInvoiceDto: CreateInvoiceDto): Promise<Invoice> {
-    // 建立發票主體（不含計算金額）
+    const isVoided = createInvoiceDto.isVoided || false;
+
+    // 建立發票主體
     const invoice = this.invoicesRepository.create({
       invoiceDate: createInvoiceDto.invoiceDate,
       invoiceNumber: createInvoiceDto.invoiceNumber,
-      customerCode: createInvoiceDto.customerCode,
-      buyer: createInvoiceDto.buyer,
+      isVoided: isVoided,
+      customerCode: isVoided ? undefined : createInvoiceDto.customerCode,
+      buyer: isVoided ? '' : (createInvoiceDto.buyer || ''),
     });
 
-    // 建立商品項目並計算單價
-    const items = createInvoiceDto.items.map((itemDto) => {
-      const unitPrice = this.calculateItemUnitPrice(
-        itemDto.amount,
-        itemDto.quantity,
-      );
+    // 如果是作廢發票，不需要商品和金額
+    if (isVoided) {
+      invoice.taxExcludedAmount = 0;
+      invoice.tax = 0;
+      invoice.taxIncludedAmount = 0;
+      invoice.items = [];
+    } else {
+      // 建立商品項目並計算單價
+      const items = createInvoiceDto.items.map((itemDto) => {
+        const unitPrice = this.calculateItemUnitPrice(
+          itemDto.amount,
+          itemDto.quantity,
+        );
 
-      return this.invoiceItemsRepository.create({
-        productName: itemDto.productName,
-        quantity: itemDto.quantity,
-        amount: itemDto.amount,
-        unitPrice: unitPrice,
+        return this.invoiceItemsRepository.create({
+          productName: itemDto.productName,
+          quantity: itemDto.quantity,
+          amount: itemDto.amount,
+          unitPrice: unitPrice,
+        });
       });
-    });
 
-    // 計算發票總金額
-    const amounts = this.calculateInvoiceAmounts(items);
+      // 計算發票總金額
+      const amounts = this.calculateInvoiceAmounts(items);
 
-    // 將計算結果賦值給發票
-    invoice.taxExcludedAmount = amounts.taxExcludedAmount;
-    invoice.tax = amounts.tax;
-    invoice.taxIncludedAmount = amounts.taxIncludedAmount;
-    invoice.items = items;
+      // 將計算結果賦值給發票
+      invoice.taxExcludedAmount = amounts.taxExcludedAmount;
+      invoice.tax = amounts.tax;
+      invoice.taxIncludedAmount = amounts.taxIncludedAmount;
+      invoice.items = items;
+    }
 
     // 儲存發票（會自動儲存 items，因為設定了 cascade: true）
     return await this.invoicesRepository.save(invoice);
@@ -239,10 +250,29 @@ export class InvoicesService {
       where = { invoiceDate: LessThanOrEqual(endDate) };
     }
 
-    return await this.invoicesRepository.find({
+    const invoices = await this.invoicesRepository.find({
       where: Object.keys(where).length > 0 ? where : {},
       relations: ['items'],
-      order: { invoiceDate: 'DESC', createdAt: 'DESC' },
+    });
+
+    // 自定義排序：先按發票字母分組，再按日期，最後按編號
+    return invoices.sort((a, b) => {
+      // 提取發票號碼的英文字母部分（前兩個字元）
+      const prefixA = a.invoiceNumber.substring(0, 2);
+      const prefixB = b.invoiceNumber.substring(0, 2);
+
+      // 1. 先按英文字母排序
+      if (prefixA !== prefixB) {
+        return prefixA.localeCompare(prefixB);
+      }
+
+      // 2. 再按日期排序
+      if (a.invoiceDate !== b.invoiceDate) {
+        return a.invoiceDate.localeCompare(b.invoiceDate);
+      }
+
+      // 3. 最後按發票號碼排序
+      return a.invoiceNumber.localeCompare(b.invoiceNumber);
     });
   }
 }

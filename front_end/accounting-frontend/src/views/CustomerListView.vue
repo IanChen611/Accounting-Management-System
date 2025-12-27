@@ -9,8 +9,9 @@
       </template>
 
       <el-table :data="customers" border style="width: 100%">
-        <el-table-column prop="code" label="客戶代號" width="150" />
-        <el-table-column prop="name" label="客戶名稱" width="200" />
+        <el-table-column prop="code" label="客戶代號" width="120" />
+        <el-table-column prop="name" label="客戶名稱" width="180" />
+        <el-table-column prop="zipCode" label="郵遞區號" width="100" />
         <el-table-column prop="address" label="聯絡地址" />
         <el-table-column prop="phone" label="聯絡電話" width="150" />
         <el-table-column label="操作" width="180" fixed="right">
@@ -34,6 +35,9 @@
         </el-form-item>
         <el-form-item label="客戶名稱" prop="name">
           <el-input v-model="form.name" />
+        </el-form-item>
+        <el-form-item label="郵遞區號" prop="zipCode">
+          <el-input v-model="form.zipCode" placeholder="例如：100" maxlength="10" />
         </el-form-item>
         <el-form-item label="聯絡地址" prop="address">
           <el-input v-model="form.address" />
@@ -63,6 +67,7 @@ const formRef = ref<FormInstance>()
 const form = ref<Customer>({
   code: '',
   name: '',
+  zipCode: '',
   address: '',
   phone: ''
 })
@@ -87,6 +92,7 @@ const handleCreate = () => {
   form.value = {
     code: '',
     name: '',
+    zipCode: '',
     address: '',
     phone: ''
   }

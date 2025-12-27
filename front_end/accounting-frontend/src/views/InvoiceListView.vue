@@ -42,12 +42,24 @@
       <el-table
         v-loading="loading"
         :data="invoices"
+        :span-method="objectSpanMethod"
         stripe
         border
         style="width: 100%"
       >
-        <el-table-column prop="invoiceDate" label="發票日期" width="120" />
+        <el-table-column prop="invoiceDate" label="發票日期" width="120">
+          <template #default="{ row }">
+            <span v-if="row.isVoided" class="voided-mark">作廢</span>
+            <span v-else>{{ row.invoiceDate }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="invoiceNumber" label="發票號碼" width="150" />
+        <el-table-column label="狀態" width="80">
+          <template #default="{ row }">
+            <el-tag v-if="row.isVoided" type="danger" size="small">作廢</el-tag>
+            <el-tag v-else type="success" size="small">正常</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="buyer" label="買受人" width="150" />
         <el-table-column prop="productName" label="品名" />
         <el-table-column prop="quantity" label="數量" width="80" align="right" />
@@ -61,12 +73,17 @@
             {{ row.amount !== null && row.amount !== undefined ? Math.round(Number(row.amount)) : '' }}
           </template>
         </el-table-column>
-        <el-table-column prop="tax" label="稅金" width="100" align="right">
+        <el-table-column label="未稅金額" width="100" align="right">
+          <template #default="{ row }">
+            {{ row.taxExcludedAmount !== null && row.taxExcludedAmount !== undefined ? Math.round(Number(row.taxExcludedAmount)) : '' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="稅金" width="100" align="right">
           <template #default="{ row }">
             {{ row.tax !== null && row.tax !== undefined ? Math.round(Number(row.tax)) : '' }}
           </template>
         </el-table-column>
-        <el-table-column prop="taxIncludedAmount" label="含稅金額" width="120" align="right">
+        <el-table-column label="含稅金額" width="120" align="right">
           <template #default="{ row }">
             {{ row.taxIncludedAmount !== null && row.taxIncludedAmount !== undefined ? Math.round(Number(row.taxIncludedAmount)) : '' }}
           </template>
@@ -114,6 +131,35 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
+// 合併儲存格方法
+const objectSpanMethod = ({ row, column, rowIndex, columnIndex }: any) => {
+  // 需要合併的欄位：發票日期(0)、發票號碼(1)、狀態(2)、買受人(3)、未稅金額(8)、稅金(9)、含稅金額(10)、操作(11)
+  // 品名(4)、數量(5)、單價(6)、金額(7) 不合併，每個商品都分別顯示
+  const mergeColumns = [0, 1, 2, 3, 8, 9, 10, 11]
+
+  if (mergeColumns.includes(columnIndex)) {
+    // 如果是第一個商品項目，顯示並合併
+    if (row._itemIndex === 0) {
+      return {
+        rowspan: row._rowspan,
+        colspan: 1
+      }
+    } else {
+      // 如果不是第一個商品項目，隱藏
+      return {
+        rowspan: 0,
+        colspan: 0
+      }
+    }
+  }
+
+  // 其他欄位不合併（品名、數量、單價、金額）
+  return {
+    rowspan: 1,
+    colspan: 1
+  }
+}
+
 // 載入發票列表
 const fetchInvoices = async () => {
   loading.value = true
@@ -141,21 +187,46 @@ const fetchInvoices = async () => {
     console.log('Invoice List:', invoiceList)
 
     invoiceList.forEach((invoice: Invoice) => {
-      if (invoice.items && invoice.items.length > 0) {
+      // 處理作廢發票（沒有商品項目）
+      if (invoice.isVoided || !invoice.items || invoice.items.length === 0) {
+        flatInvoices.push({
+          id: invoice.id,
+          invoiceDate: invoice.invoiceDate,
+          invoiceNumber: invoice.invoiceNumber,
+          buyer: invoice.buyer || '',
+          isVoided: invoice.isVoided,
+          productName: '',
+          quantity: null,
+          unitPrice: null,
+          amount: null,
+          taxExcludedAmount: null,
+          tax: null,
+          taxIncludedAmount: null,
+          _originalInvoice: invoice,
+          _rowspan: 1, // 用於合併儲存格
+          _itemIndex: 0 // 商品在發票中的索引
+        })
+      } else {
+        // 處理正常發票（有商品項目）
+        const itemCount = invoice.items.length
         invoice.items.forEach((item: any, index: number) => {
           flatInvoices.push({
             id: invoice.id,
             invoiceDate: index === 0 ? invoice.invoiceDate : '', // 只在第一個商品顯示發票資訊
             invoiceNumber: index === 0 ? invoice.invoiceNumber : '',
             buyer: index === 0 ? invoice.buyer : '',
+            isVoided: false,
             productName: item.productName,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             amount: item.amount,
-            tax: index === 0 ? invoice.tax : null,
-            taxIncludedAmount: index === 0 ? invoice.taxIncludedAmount : null,
+            taxExcludedAmount: invoice.taxExcludedAmount,
+            tax: invoice.tax,
+            taxIncludedAmount: invoice.taxIncludedAmount,
             // 保留原始發票物件以便編輯
-            _originalInvoice: invoice
+            _originalInvoice: invoice,
+            _rowspan: itemCount, // 該發票的商品總數
+            _itemIndex: index // 商品在發票中的索引
           })
         })
       }
@@ -328,5 +399,10 @@ onMounted(() => {
 .actions {
   display: flex;
   gap: 10px;
+}
+
+.voided-mark {
+  color: #f56c6c;
+  font-weight: bold;
 }
 </style>

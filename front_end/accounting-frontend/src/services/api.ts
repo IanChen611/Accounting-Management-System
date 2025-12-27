@@ -20,6 +20,7 @@ export interface Invoice {
   taxExcludedAmount?: number
   tax?: number
   taxIncludedAmount?: number
+  isVoided?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -29,6 +30,7 @@ export interface Customer {
   id?: number
   code: string
   name: string
+  zipCode?: string
   address?: string
   phone?: string
   createdAt?: string

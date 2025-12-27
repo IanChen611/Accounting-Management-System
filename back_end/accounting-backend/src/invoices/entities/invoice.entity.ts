@@ -19,6 +19,9 @@ export class Invoice {
   @Column({ type: 'varchar', length: 50, unique: true, comment: '發票號碼' })
   invoiceNumber: string;
 
+  @Column({ type: 'boolean', default: false, comment: '是否作廢' })
+  isVoided: boolean;
+
   @Column({ type: 'varchar', length: 20, nullable: true, comment: '客戶代號' })
   customerCode: string;
 
