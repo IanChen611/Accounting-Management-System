@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterView, useRouter, useRoute } from 'vue-router'
-import { Document, HomeFilled, InfoFilled, User } from '@element-plus/icons-vue'
+import { Document, HomeFilled, InfoFilled, User, Plus } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -21,6 +21,10 @@ const getActiveMenu = () => {
 
 const handleMenuSelect = (key: string) => {
   router.push(key)
+}
+
+const handleCreateInvoice = () => {
+  router.push('/invoices/create')
 }
 </script>
 
@@ -52,6 +56,14 @@ const handleMenuSelect = (key: string) => {
             關於
           </el-menu-item>
         </el-menu>
+        <el-button
+          type="primary"
+          :icon="Plus"
+          @click="handleCreateInvoice"
+          class="create-invoice-btn"
+        >
+          建立發票
+        </el-button>
       </div>
     </el-header>
 
@@ -105,6 +117,11 @@ const handleMenuSelect = (key: string) => {
 :deep(.el-menu-item) {
   height: 60px;
   line-height: 60px;
+}
+
+.create-invoice-btn {
+  margin-left: auto;
+  height: 36px;
 }
 
 /* 移除 Element Plus 預設的最大寬度限制 */

@@ -11,6 +11,7 @@
       </template>
 
       <InvoiceForm
+        ref="invoiceFormRef"
         submit-button-text="建立發票"
         @submit="handleSubmit"
         @cancel="handleBack"
@@ -20,6 +21,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Back } from '@element-plus/icons-vue'
@@ -27,12 +29,17 @@ import InvoiceForm from '@/components/InvoiceForm.vue'
 import { invoiceApi, type Invoice } from '@/services/api'
 
 const router = useRouter()
+const invoiceFormRef = ref()
 
 const handleSubmit = async (data: Invoice) => {
   try {
     await invoiceApi.createInvoice(data)
     ElMessage.success('發票建立成功')
-    // 不自動跳轉，保持在當前頁面
+
+    // 發票建立成功後，自動將發票號碼加一並清空其他欄位
+    if (invoiceFormRef.value) {
+      invoiceFormRef.value.resetFormWithIncrementedInvoiceNumber()
+    }
   } catch (error) {
     ElMessage.error('發票建立失敗')
     console.error(error)

@@ -390,6 +390,57 @@ watch(
   }
 )
 
+// 發票號碼自動加一的函式
+const incrementInvoiceNumber = (invoiceNumber: string): string => {
+  // 發票號碼格式：XX12345678（兩個英文字母 + 八位數字）
+  const match = invoiceNumber.match(/^([A-Z]{2})(\d{8})$/)
+  if (!match) return invoiceNumber
+
+  const prefix = match[1]
+  const number = parseInt(match[2], 10)
+  const nextNumber = number + 1
+
+  // 如果超過 99999999，重置為 00000001
+  const newNumber = nextNumber > 99999999 ? 1 : nextNumber
+
+  // 補零到 8 位數
+  return prefix + newNumber.toString().padStart(8, '0')
+}
+
+// 重置表單並將發票號碼加一
+const resetFormWithIncrementedInvoiceNumber = () => {
+  const currentInvoiceNumber = formData.invoiceNumber
+
+  // 重置所有欄位
+  formData.invoiceDate = ''
+  formData.customerCode = ''
+  formData.buyer = ''
+  formData.items = [
+    {
+      productName: '',
+      quantity: 1,
+      amount: 0
+    }
+  ]
+  formData.taxExcludedAmount = 0
+  formData.tax = 0
+  formData.taxIncludedAmount = 0
+  formData.isVoided = false
+
+  // 發票號碼自動加一
+  formData.invoiceNumber = incrementInvoiceNumber(currentInvoiceNumber)
+
+  // 重置表單驗證狀態
+  if (formRef.value) {
+    formRef.value.clearValidate()
+  }
+}
+
+// 暴露方法給父組件使用
+defineExpose({
+  resetFormWithIncrementedInvoiceNumber
+})
+
 // 初始化表單數據
 onMounted(() => {
   if (props.initialData) {
