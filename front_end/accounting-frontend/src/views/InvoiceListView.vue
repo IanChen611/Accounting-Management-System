@@ -299,6 +299,11 @@ const handleExportExcel = async () => {
   try {
     const params: any = {}
 
+    // 如果有搜尋關鍵字，加入參數
+    if (searchKeyword.value) {
+      params.search = searchKeyword.value
+    }
+
     // 如果有日期範圍，加入參數
     if (dateRange.value && dateRange.value.length === 2) {
       params.startDate = dateRange.value[0]
@@ -327,6 +332,11 @@ const handleExportCsv = async () => {
   try {
     const params: any = {}
 
+    // 如果有搜尋關鍵字，加入參數
+    if (searchKeyword.value) {
+      params.search = searchKeyword.value
+    }
+
     // 如果有日期範圍，加入參數
     if (dateRange.value && dateRange.value.length === 2) {
       params.startDate = dateRange.value[0]
@@ -352,6 +362,11 @@ const handleExportCsv = async () => {
 const handleExportPdf = async () => {
   try {
     const params: any = {}
+
+    // 如果有搜尋關鍵字，加入參數
+    if (searchKeyword.value) {
+      params.search = searchKeyword.value
+    }
 
     // 如果有日期範圍，加入參數
     if (dateRange.value && dateRange.value.length === 2) {

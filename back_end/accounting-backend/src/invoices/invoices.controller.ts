@@ -52,10 +52,12 @@ export class InvoicesController {
     @Res() res: Response,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
   ) {
     const invoices = await this.invoicesService.findAllForExport({
       startDate,
       endDate,
+      search,
     });
 
     // CSV 標頭
@@ -119,10 +121,12 @@ export class InvoicesController {
     @Res() res: Response,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
   ) {
     const invoices = await this.invoicesService.findAllForExport({
       startDate,
       endDate,
+      search,
     });
     const pdfBuffer = await this.pdfService.generateInvoicesPdf(invoices);
 
@@ -140,10 +144,12 @@ export class InvoicesController {
     @Res() res: Response,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
   ) {
     const invoices = await this.invoicesService.findAllForExport({
       startDate,
       endDate,
+      search,
     });
     const excelBuffer = await this.excelService.generateInvoicesExcel(invoices);
 

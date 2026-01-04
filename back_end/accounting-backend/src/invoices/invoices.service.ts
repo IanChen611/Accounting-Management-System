@@ -235,23 +235,55 @@ export class InvoicesService {
   async findAllForExport(params?: {
     startDate?: string;
     endDate?: string;
+    search?: string;
   }): Promise<Invoice[]> {
     const startDate = params?.startDate;
     const endDate = params?.endDate;
+    const search = params?.search || '';
 
     // 建立查詢條件
-    let where: any = {};
+    let whereConditions: any[] = [];
 
-    if (startDate && endDate) {
-      where = { invoiceDate: Between(startDate, endDate) };
-    } else if (startDate) {
-      where = { invoiceDate: MoreThanOrEqual(startDate) };
-    } else if (endDate) {
-      where = { invoiceDate: LessThanOrEqual(endDate) };
+    if (search) {
+      // 如果有搜尋關鍵字
+      const searchConditions = [
+        { invoiceNumber: Like(`%${search}%`) },
+        { buyer: Like(`%${search}%`) },
+        { customerCode: Like(`%${search}%`) },
+      ];
+
+      // 如果有日期範圍，加入日期條件
+      if (startDate && endDate) {
+        whereConditions = searchConditions.map(condition => ({
+          ...condition,
+          invoiceDate: Between(startDate, endDate),
+        }));
+      } else if (startDate) {
+        whereConditions = searchConditions.map(condition => ({
+          ...condition,
+          invoiceDate: MoreThanOrEqual(startDate),
+        }));
+      } else if (endDate) {
+        whereConditions = searchConditions.map(condition => ({
+          ...condition,
+          invoiceDate: LessThanOrEqual(endDate),
+        }));
+      } else {
+        whereConditions = searchConditions;
+      }
+    } else {
+      // 如果沒有搜尋關鍵字，只有日期範圍
+      if (startDate && endDate) {
+        whereConditions = [{ invoiceDate: Between(startDate, endDate) }];
+      } else if (startDate) {
+        whereConditions = [{ invoiceDate: MoreThanOrEqual(startDate) }];
+      } else if (endDate) {
+        whereConditions = [{ invoiceDate: LessThanOrEqual(endDate) }];
+      }
     }
 
     const invoices = await this.invoicesRepository.find({
-      where: Object.keys(where).length > 0 ? where : {},
+      where: whereConditions.length > 0 ? whereConditions : {},
       relations: ['items'],
     });
 

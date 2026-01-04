@@ -7,14 +7,30 @@
     label-position="left"
   >
     <el-form-item label="發票日期" prop="invoiceDate">
-      <el-date-picker
-        v-model="formData.invoiceDate"
-        type="date"
-        placeholder="請選擇發票日期"
-        format="YYYY/MM/DD"
-        value-format="YYYY-MM-DD"
+      <el-input
+        v-model="dateInputValue"
+        placeholder="可輸入 1141101 或選擇日期"
+        @blur="handleDateInputBlur"
+        @keydown.enter="handleDateInputEnter"
+        ref="dateInputRef"
         style="width: 100%"
-      />
+      >
+        <template #suffix>
+          <el-date-picker
+            v-model="formData.invoiceDate"
+            type="date"
+            format="YYYY/MM/DD"
+            value-format="YYYY-MM-DD"
+            style="width: 32px"
+            @change="handleDatePickerChange"
+            :teleported="false"
+          >
+            <template #default>
+              <el-icon><Calendar /></el-icon>
+            </template>
+          </el-date-picker>
+        </template>
+      </el-input>
     </el-form-item>
 
     <el-form-item label="發票號碼" prop="invoiceNumber">
@@ -28,11 +44,25 @@
     </el-form-item>
 
     <el-form-item label="客戶代號" prop="customerCode" v-if="!formData.isVoided">
-      <el-input
+      <el-select
         v-model="formData.customerCode"
-        placeholder="請輸入客戶代號"
-        @blur="handleCustomerCodeBlur"
-      />
+        filterable
+        remote
+        reserve-keyword
+        placeholder="請輸入或選擇客戶代號"
+        :remote-method="searchCustomers"
+        :loading="customersLoading"
+        @change="handleCustomerCodeChange"
+        @keydown.enter="handleCustomerCodeEnter"
+        style="width: 100%"
+      >
+        <el-option
+          v-for="customer in customerOptions"
+          :key="customer.code"
+          :label="`${customer.code} - ${customer.name}`"
+          :value="customer.code"
+        />
+      </el-select>
     </el-form-item>
 
     <el-form-item label="買受人" prop="buyer" v-if="!formData.isVoided">
@@ -98,10 +128,13 @@
             >
               <el-input-number
                 v-model="item.quantity"
-                :min="1"
+                :min="0"
                 :precision="0"
                 :controls="false"
                 style="width: 120%"
+                placeholder="請輸入數量"
+                :formatter="formatNumber"
+                :parser="parseNumber"
                 @change="calculateTotals"
               />
             </el-form-item>
@@ -109,11 +142,12 @@
           <el-col :span="15">
             <el-form-item label="單價" label-width="80px">
               <el-input-number
-                :model-value="parseFloat(calculateUnitPrice(item))"
+                :model-value="item.quantity ? parseFloat(calculateUnitPrice(item)) : null"
                 :controls="false"
                 :precision="2"
                 disabled
                 style="width: 100%"
+                :formatter="formatNumber"
               />
             </el-form-item>
           </el-col>
@@ -131,6 +165,8 @@
                 :controls="false"
                 style="width: 100%"
                 :placeholder="isDeductionItem(item.productName) ? '輸入正數，系統自動轉為減項' : '請輸入金額'"
+                :formatter="formatNumber"
+                :parser="parseNumber"
                 @update:model-value="(val) => handleAmountChange(item, val)"
               />
             </el-form-item>
@@ -169,7 +205,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Delete } from '@element-plus/icons-vue'
+import { Plus, Delete, Calendar } from '@element-plus/icons-vue'
 import { customerApi, type Invoice, type InvoiceItem } from '@/services/api'
 
 interface Props {
@@ -197,6 +233,10 @@ const productOptions = [
 ]
 
 const formRef = ref<FormInstance>()
+const dateInputRef = ref()
+const dateInputValue = ref('')
+const customersLoading = ref(false)
+const customerOptions = ref<any[]>([])
 
 const formData = reactive<Invoice>({
   invoiceDate: '',
@@ -206,8 +246,8 @@ const formData = reactive<Invoice>({
   items: [
     {
       productName: '',
-      quantity: 1,
-      amount: 0
+      quantity: null as any,
+      amount: null as any
     }
   ],
   taxExcludedAmount: 0,
@@ -216,8 +256,124 @@ const formData = reactive<Invoice>({
   isVoided: false
 })
 
+// 將民國年日期轉換為西元年日期
+// 支援格式：1141101 或 1101 (114年11月01日 或 11月01日，預設今年)
+const convertROCtoAD = (input: string): string | null => {
+  // 移除所有空白和分隔符號
+  const cleaned = input.replace(/[\s\-\/]/g, '')
+
+  // 格式 1: 1141101 (7位數) - 民國年YYMMDD
+  if (/^\d{7}$/.test(cleaned)) {
+    const rocYear = parseInt(cleaned.substring(0, 3), 10)
+    const month = cleaned.substring(3, 5)
+    const day = cleaned.substring(5, 7)
+    const adYear = rocYear + 1911
+
+    // 驗證日期有效性
+    const date = new Date(`${adYear}-${month}-${day}`)
+    if (!isNaN(date.getTime())) {
+      return `${adYear}-${month}-${day}`
+    }
+  }
+
+  // 格式 2: 1101 (4位數) - MMDD，使用當前民國年
+  if (/^\d{4}$/.test(cleaned)) {
+    const currentYear = new Date().getFullYear()
+    const currentROCYear = currentYear - 1911
+    const month = cleaned.substring(0, 2)
+    const day = cleaned.substring(2, 4)
+    const adYear = currentROCYear + 1911
+
+    // 驗證日期有效性
+    const date = new Date(`${adYear}-${month}-${day}`)
+    if (!isNaN(date.getTime())) {
+      return `${adYear}-${month}-${day}`
+    }
+  }
+
+  // 格式 3: 1140102 (6位數) - 民國年YMMDD (單位數月份)
+  if (/^\d{6}$/.test(cleaned)) {
+    const rocYear = parseInt(cleaned.substring(0, 3), 10)
+    const month = cleaned.substring(3, 4)
+    const day = cleaned.substring(4, 6)
+    const adYear = rocYear + 1911
+    const paddedMonth = month.padStart(2, '0')
+
+    // 驗證日期有效性
+    const date = new Date(`${adYear}-${paddedMonth}-${day}`)
+    if (!isNaN(date.getTime())) {
+      return `${adYear}-${paddedMonth}-${day}`
+    }
+  }
+
+  return null
+}
+
+// 處理日期輸入失焦
+const handleDateInputBlur = () => {
+  if (!dateInputValue.value) return
+
+  const convertedDate = convertROCtoAD(dateInputValue.value)
+  if (convertedDate) {
+    formData.invoiceDate = convertedDate
+    // 更新顯示值為 YYYY/MM/DD 格式
+    dateInputValue.value = convertedDate.replace(/-/g, '/')
+  } else {
+    ElMessage.warning('日期格式錯誤，請輸入如 1141101 或 1101 的格式')
+  }
+}
+
+// 處理日期輸入按下 Enter
+const handleDateInputEnter = (event: KeyboardEvent) => {
+  event.preventDefault()
+  handleDateInputBlur()
+
+  // 跳到發票號碼欄位
+  const invoiceNumberInput = document.querySelector('input[placeholder*="發票號碼"]') as HTMLInputElement
+  if (invoiceNumberInput) {
+    invoiceNumberInput.focus()
+  }
+}
+
+// 處理日期選擇器變更
+const handleDatePickerChange = (value: string) => {
+  if (value) {
+    dateInputValue.value = value.replace(/-/g, '/')
+  }
+}
+
+// 千分位格式化
+const formatNumber = (value: number | string): string => {
+  if (!value && value !== 0) return ''
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  if (isNaN(num)) return ''
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+// 解析千分位數字
+const parseNumber = (value: string): string => {
+  if (!value) return ''
+  return value.replace(/,/g, '')
+}
+
 const rules: FormRules = {
-  invoiceDate: [{ required: true, message: '請選擇發票日期', trigger: 'change' }],
+  invoiceDate: [
+    {
+      required: true,
+      message: '請選擇發票日期',
+      trigger: 'change',
+      validator: (rule, value, callback) => {
+        // 如果是作廢發票，允許不輸入日期
+        if (formData.isVoided) {
+          callback()
+        } else if (!value) {
+          callback(new Error('請選擇發票日期'))
+        } else {
+          callback()
+        }
+      }
+    }
+  ],
   invoiceNumber: [
     { required: true, message: '請輸入發票號碼', trigger: 'blur' },
     {
@@ -284,8 +440,8 @@ const calculateTotals = () => {
 const addItem = () => {
   formData.items.push({
     productName: '',
-    quantity: 1,
-    amount: 0
+    quantity: null as any,
+    amount: null as any
   })
 }
 
@@ -310,25 +466,57 @@ const handleVoidedChange = (value: boolean) => {
     formData.items = [
       {
         productName: '',
-        quantity: 1,
-        amount: 0
+        quantity: null as any,
+        amount: null as any
       }
     ]
   }
 }
 
-// 處理客戶代號輸入後自動帶入客戶名稱
-const handleCustomerCodeBlur = async () => {
-  if (!formData.customerCode) return
+// 搜尋客戶
+const searchCustomers = async (query: string) => {
+  if (query) {
+    customersLoading.value = true
+    try {
+      const response = await customerApi.getCustomers()
+      const customers = response.data || []
+      // 過濾符合搜尋條件的客戶
+      customerOptions.value = customers.filter((customer: any) =>
+        customer.code.toLowerCase().includes(query.toLowerCase()) ||
+        customer.name.toLowerCase().includes(query.toLowerCase())
+      )
+    } catch (error) {
+      console.error('搜尋客戶失敗:', error)
+    } finally {
+      customersLoading.value = false
+    }
+  } else {
+    customerOptions.value = []
+  }
+}
+
+// 處理客戶代號變更
+const handleCustomerCodeChange = async (code: string) => {
+  if (!code) return
 
   try {
-    const response = await customerApi.getCustomerByCode(formData.customerCode)
+    const response = await customerApi.getCustomerByCode(code)
     if (response.data) {
       formData.buyer = response.data.name
       ElMessage.success('已自動帶入客戶名稱')
     }
   } catch (error) {
     console.log('客戶代號不存在，需手動輸入買受人')
+  }
+}
+
+// 處理客戶代號按下 Enter
+const handleCustomerCodeEnter = () => {
+  // ENTER 鍵會自動觸發 @change 事件，所以這裡不需要額外處理
+  // 可以用來跳到下一個欄位（買受人）
+  const buyerInput = document.querySelector('input[placeholder*="買受人"]') as HTMLInputElement
+  if (buyerInput) {
+    buyerInput.focus()
   }
 }
 
@@ -413,13 +601,14 @@ const resetFormWithIncrementedInvoiceNumber = () => {
 
   // 重置所有欄位
   formData.invoiceDate = ''
+  dateInputValue.value = ''
   formData.customerCode = ''
   formData.buyer = ''
   formData.items = [
     {
       productName: '',
-      quantity: 1,
-      amount: 0
+      quantity: null as any,
+      amount: null as any
     }
   ]
   formData.taxExcludedAmount = 0
@@ -446,6 +635,11 @@ onMounted(() => {
   if (props.initialData) {
     Object.assign(formData, props.initialData)
 
+    // 更新日期顯示值
+    if (formData.invoiceDate) {
+      dateInputValue.value = formData.invoiceDate.replace(/-/g, '/')
+    }
+
     // 轉換 items 中的數字欄位（從 API 回傳的可能是字串）
     if (formData.items && formData.items.length > 0) {
       formData.items = formData.items.map(item => ({
@@ -457,8 +651,8 @@ onMounted(() => {
       formData.items = [
         {
           productName: '',
-          quantity: 1,
-          amount: 0
+          quantity: null as any,
+          amount: null as any
         }
       ]
     }
