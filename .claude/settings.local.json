@@ -19,7 +19,9 @@
       "Bash(ls:*)",
       "Bash(node read-excel.js:*)",
       "Bash(node import-customers.js:*)",
-      "Bash(node import-missing-customers.js:*)"
+      "Bash(node import-missing-customers.js:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

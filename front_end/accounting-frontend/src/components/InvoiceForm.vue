@@ -47,17 +47,15 @@
       <el-select
         v-model="formData.customerCode"
         filterable
-        remote
-        reserve-keyword
-        placeholder="請輸入或選擇客戶代號"
-        :remote-method="searchCustomers"
+        placeholder="請輸入或選擇客戶代號，按ENTER自動填入買受人"
         :loading="customersLoading"
         @change="handleCustomerCodeChange"
-        @keydown.enter="handleCustomerCodeEnter"
         style="width: 100%"
+        ref="customerSelectRef"
+        @keyup.enter="handleCustomerCodeEnterKey"
       >
         <el-option
-          v-for="customer in customerOptions"
+          v-for="customer in allCustomers"
           :key="customer.code"
           :label="`${customer.code} - ${customer.name}`"
           :value="customer.code"
@@ -126,12 +124,14 @@
               label="數量"
               label-width="80px"
             >
-              <el-input
-                :model-value="formatNumberForDisplay(item.quantity)"
+              <el-input-number
+                v-model="item.quantity"
                 placeholder="請輸入數量"
-                style="width: 120%"
-                @input="(val) => handleQuantityInput(item, val)"
-                @blur="handleQuantityBlur(item)"
+                :controls="false"
+                :precision="0"
+                style="width: 100%"
+                :formatter="(value) => value ? `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''"
+                :parser="(value) => value.replace(/,/g, '')"
               />
             </el-form-item>
           </el-col>
@@ -151,11 +151,18 @@
               label="金額"
               label-width="80px"
             >
-              <el-input
-                :model-value="formatNumberForDisplay(getDisplayAmount(item), 2)"
+              <el-input-number
+                v-model="item.amount"
                 :placeholder="isDeductionItem(item.productName) ? '輸入正數，系統自動轉為減項' : '請輸入金額'"
+                :controls="false"
+                :precision="2"
                 style="width: 100%"
-                @input="(val) => handleAmountInput(item, val)"
+                :formatter="(value) => value !== null && value !== undefined ? `${Math.abs(value).toFixed(2)}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''"
+                :parser="(value) => {
+                  const num = parseFloat(value.replace(/,/g, ''))
+                  if (isNaN(num)) return null
+                  return isDeductionItem(item.productName) ? -Math.abs(num) : Math.abs(num)
+                }"
                 @blur="handleAmountBlur(item)"
               />
             </el-form-item>
@@ -172,13 +179,13 @@
 
     <el-descriptions v-if="!formData.isVoided" :column="1" border class="amount-summary">
       <el-descriptions-item label="未稅金額">
-        <span class="amount-value">NT$ {{ Math.round(formData.taxExcludedAmount || 0) }}</span>
+        <span class="amount-value">NT$ {{ Math.round(formData.taxExcludedAmount || 0).toLocaleString() }}</span>
       </el-descriptions-item>
       <el-descriptions-item label="稅金 (5%)">
-        <span class="amount-value">NT$ {{ Math.round(formData.tax || 0) }}</span>
+        <span class="amount-value">NT$ {{ Math.round(formData.tax || 0).toLocaleString() }}</span>
       </el-descriptions-item>
       <el-descriptions-item label="含稅金額">
-        <span class="total-amount">NT$ {{ Math.round(formData.taxIncludedAmount || 0) }}</span>
+        <span class="total-amount">NT$ {{ Math.round(formData.taxIncludedAmount || 0).toLocaleString() }}</span>
       </el-descriptions-item>
     </el-descriptions>
 
@@ -223,9 +230,11 @@ const productOptions = [
 
 const formRef = ref<FormInstance>()
 const dateInputRef = ref()
+const customerSelectRef = ref()
 const dateInputValue = ref('')
 const customersLoading = ref(false)
-const customerOptions = ref<any[]>([])
+const allCustomers = ref<any[]>([])
+const lastTypedCustomerCode = ref('') // 保存用户最后输入的代号
 
 const formData = reactive<Invoice>({
   invoiceDate: '',
@@ -331,7 +340,7 @@ const handleDatePickerChange = (value: string) => {
   }
 }
 
-// 千分位格式化顯示
+// 千分位格式化顯示（用於唯讀欄位）
 const formatNumberForDisplay = (value: number | null | undefined, decimals: number = 0): string => {
   if (value === null || value === undefined || value === '') return ''
   const num = typeof value === 'string' ? parseFloat(value) : value
@@ -341,45 +350,6 @@ const formatNumberForDisplay = (value: number | null | undefined, decimals: numb
   const parts = num.toFixed(decimals).split('.')
   parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
   return parts.join('.')
-}
-
-// 解析千分位數字為純數字
-const parseNumberFromInput = (value: string): number | null => {
-  if (!value || value.trim() === '') return null
-  const cleaned = value.replace(/,/g, '').trim()
-  const num = parseFloat(cleaned)
-  return isNaN(num) ? null : num
-}
-
-// 處理數量輸入
-const handleQuantityInput = (item: InvoiceItem, value: string) => {
-  // 暫存輸入值，允許使用者輸入
-  const num = parseNumberFromInput(value)
-  if (num !== null) {
-    item.quantity = Math.floor(num) // 數量只保留整數
-  } else {
-    item.quantity = null as any
-  }
-}
-
-// 處理數量失焦
-const handleQuantityBlur = (item: InvoiceItem) => {
-  calculateTotals()
-}
-
-// 處理金額輸入
-const handleAmountInput = (item: InvoiceItem, value: string) => {
-  const num = parseNumberFromInput(value)
-  if (num !== null) {
-    // 如果是減項商品，自動轉為負數
-    if (isDeductionItem(item.productName)) {
-      item.amount = -Math.abs(num)
-    } else {
-      item.amount = Math.abs(num)
-    }
-  } else {
-    item.amount = null as any
-  }
 }
 
 // 處理金額失焦
@@ -493,29 +463,21 @@ const handleVoidedChange = (value: boolean) => {
   }
 }
 
-// 搜尋客戶
-const searchCustomers = async (query: string) => {
-  if (query) {
-    customersLoading.value = true
-    try {
-      const response = await customerApi.getCustomers()
-      const customers = response.data || []
-      // 過濾符合搜尋條件的客戶
-      customerOptions.value = customers.filter((customer: any) =>
-        customer.code.toLowerCase().includes(query.toLowerCase()) ||
-        customer.name.toLowerCase().includes(query.toLowerCase())
-      )
-    } catch (error) {
-      console.error('搜尋客戶失敗:', error)
-    } finally {
-      customersLoading.value = false
-    }
-  } else {
-    customerOptions.value = []
+// 載入所有客戶
+const loadAllCustomers = async () => {
+  customersLoading.value = true
+  try {
+    const response = await customerApi.getCustomers()
+    allCustomers.value = response.data || []
+  } catch (error) {
+    console.error('載入客戶列表失敗:', error)
+    ElMessage.error('載入客戶列表失敗')
+  } finally {
+    customersLoading.value = false
   }
 }
 
-// 處理客戶代號變更
+// 處理客戶代號變更（從下拉選單選擇時）
 const handleCustomerCodeChange = async (code: string) => {
   if (!code) return
 
@@ -530,13 +492,108 @@ const handleCustomerCodeChange = async (code: string) => {
   }
 }
 
-// 處理客戶代號按下 Enter
-const handleCustomerCodeEnter = () => {
-  // ENTER 鍵會自動觸發 @change 事件，所以這裡不需要額外處理
-  // 可以用來跳到下一個欄位（買受人）
-  const buyerInput = document.querySelector('input[placeholder*="買受人"]') as HTMLInputElement
-  if (buyerInput) {
-    buyerInput.focus()
+// 處理客戶代號按下 Enter 鍵
+const handleCustomerCodeEnterKey = async (event: KeyboardEvent) => {
+  // 延迟执行，确保能获取到最新的输入值
+  await new Promise(resolve => setTimeout(resolve, 50))
+
+  console.log('=== ENTER键按下 ===')
+  console.log('最后输入的代号:', lastTypedCustomerCode.value)
+  console.log('formData.customerCode:', formData.customerCode)
+
+  // 优先使用用户最后输入的代号
+  let codeToSearch = lastTypedCustomerCode.value || ''
+
+  // 如果没有捕获到输入，尝试从输入框获取
+  if (!codeToSearch) {
+    const selectInput = customerSelectRef.value?.$el?.querySelector('input')
+    const inputValue = selectInput?.value?.trim() || ''
+    console.log('输入框显示的值:', inputValue)
+    
+    if (inputValue) {
+      if (inputValue.includes(' - ')) {
+        codeToSearch = inputValue.split(' - ')[0].trim()
+      } else {
+        codeToSearch = inputValue
+      }
+    }
+  }
+  
+  // 如果还是空，使用已选择的值
+  if (!codeToSearch && formData.customerCode) {
+    codeToSearch = formData.customerCode
+  }
+
+  console.log('要查询的代号:', codeToSearch)
+
+  if (!codeToSearch) {
+    ElMessage.warning('請輸入客戶代號')
+    return
+  }
+
+  // 清空旧的买受人信息
+  formData.buyer = ''
+
+  try {
+    // 先在本地查找精確匹配
+    const exactMatch = allCustomers.value.find((customer: any) =>
+      customer.code.toLowerCase() === codeToSearch.toLowerCase()
+    )
+
+    if (exactMatch) {
+      console.log('找到本地客户:', exactMatch)
+      formData.customerCode = exactMatch.code
+      formData.buyer = exactMatch.name
+      lastTypedCustomerCode.value = '' // 清空缓存
+      ElMessage.success(`已自動帶入客戶：${exactMatch.name}`)
+      
+      // 关闭下拉选单
+      if (customerSelectRef.value) {
+        customerSelectRef.value.blur()
+      }
+      
+      // 自動跳到買受人欄位
+      setTimeout(() => {
+        const buyerInput = document.querySelector('input[placeholder*="買受人"]') as HTMLInputElement
+        if (buyerInput) {
+          buyerInput.focus()
+        }
+      }, 150)
+    } else {
+      // 如果本地沒找到，嘗試從API查詢
+      console.log('本地未找到，尝试API查询')
+      try {
+        const response = await customerApi.getCustomerByCode(codeToSearch)
+        if (response.data) {
+          console.log('API找到客户:', response.data)
+          formData.customerCode = response.data.code
+          formData.buyer = response.data.name
+          lastTypedCustomerCode.value = '' // 清空缓存
+          ElMessage.success(`已自動帶入客戶：${response.data.name}`)
+          
+          // 关闭下拉选单
+          if (customerSelectRef.value) {
+            customerSelectRef.value.blur()
+          }
+          
+          // 自動跳到買受人欄位
+          setTimeout(() => {
+            const buyerInput = document.querySelector('input[placeholder*="買受人"]') as HTMLInputElement
+            if (buyerInput) {
+              buyerInput.focus()
+            }
+          }, 150)
+        }
+      } catch (apiError) {
+        console.log('API查询失败:', apiError)
+        lastTypedCustomerCode.value = '' // 清空缓存
+        ElMessage.error(`找不到客戶代號「${codeToSearch}」，請確認後重新輸入`)
+      }
+    }
+  } catch (error) {
+    lastTypedCustomerCode.value = '' // 清空缓存
+    ElMessage.error('查詢客戶時發生錯誤')
+    console.error('查詢客戶失敗:', error)
   }
 }
 
@@ -651,7 +708,28 @@ defineExpose({
 })
 
 // 初始化表單數據
-onMounted(() => {
+onMounted(async () => {
+  // 載入所有客戶資料
+  await loadAllCustomers()
+
+  // 为客户代号输入框添加原生input监听
+  if (customerSelectRef.value) {
+    const inputElement = customerSelectRef.value.$el?.querySelector('input')
+    if (inputElement) {
+      inputElement.addEventListener('input', (e: Event) => {
+        const target = e.target as HTMLInputElement
+        const value = target.value.trim()
+        console.log('原生input事件，用户输入:', value)
+        // 只保存纯代号部分（不包含 " - 客户名称"）
+        if (value && !value.includes(' - ')) {
+          lastTypedCustomerCode.value = value
+        } else if (value.includes(' - ')) {
+          lastTypedCustomerCode.value = value.split(' - ')[0].trim()
+        }
+      })
+    }
+  }
+
   if (props.initialData) {
     Object.assign(formData, props.initialData)
 
@@ -765,7 +843,6 @@ onMounted(() => {
   font-size: 12px;
   color: #909399;
 }
-
 .void-hint {
   margin-left: 10px;
   font-size: 13px;

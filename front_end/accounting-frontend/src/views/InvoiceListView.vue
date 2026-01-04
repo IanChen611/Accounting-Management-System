@@ -11,7 +11,7 @@
     </div>
 
     <el-card>
-      <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
+      <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <el-input
           v-model="searchKeyword"
           placeholder="搜尋發票號碼、買受人或品名"
@@ -24,17 +24,27 @@
           </template>
         </el-input>
 
-        <el-date-picker
-          v-model="dateRange"
-          type="daterange"
-          range-separator="至"
-          start-placeholder="開始日期"
-          end-placeholder="結束日期"
-          format="YYYY-MM-DD"
-          value-format="YYYY-MM-DD"
-          style="width: 300px"
-          @change="handleSearch"
-        />
+        <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 400px;">
+          <el-input
+            v-model="startDateInput"
+            placeholder="開始日期(可輸入1141101)"
+            clearable
+            style="flex: 1"
+            class="date-input"
+            @blur="handleStartDateBlur"
+            @keydown.enter="handleStartDateEnter"
+          />
+          <span style="margin: 0 5px; white-space: nowrap;">至</span>
+          <el-input
+            v-model="endDateInput"
+            placeholder="結束日期(可輸入1141101)"
+            clearable
+            style="flex: 1"
+            class="date-input"
+            @blur="handleEndDateBlur"
+            @keydown.enter="handleEndDateEnter"
+          />
+        </div>
 
         <el-button @click="handleClearFilters">清除篩選</el-button>
       </div>
@@ -62,30 +72,34 @@
         </el-table-column>
         <el-table-column prop="buyer" label="買受人" width="150" />
         <el-table-column prop="productName" label="品名" />
-        <el-table-column prop="quantity" label="數量" width="80" align="right" />
+        <el-table-column prop="quantity" label="數量" width="80" align="right">
+          <template #default="{ row }">
+            {{ row.quantity !== null && row.quantity !== undefined ? Number(row.quantity).toLocaleString() : '' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="unitPrice" label="單價" width="100" align="right">
           <template #default="{ row }">
-            {{ row.unitPrice !== null && row.unitPrice !== undefined ? Number(row.unitPrice).toFixed(2) : '' }}
+            {{ row.unitPrice !== null && row.unitPrice !== undefined ? Number(row.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '' }}
           </template>
         </el-table-column>
         <el-table-column prop="amount" label="金額" width="120" align="right">
           <template #default="{ row }">
-            {{ row.amount !== null && row.amount !== undefined ? Math.round(Number(row.amount)) : '' }}
+            {{ row.amount !== null && row.amount !== undefined ? Math.round(Number(row.amount)).toLocaleString() : '' }}
           </template>
         </el-table-column>
         <el-table-column label="未稅金額" width="100" align="right">
           <template #default="{ row }">
-            {{ row.taxExcludedAmount !== null && row.taxExcludedAmount !== undefined ? Math.round(Number(row.taxExcludedAmount)) : '' }}
+            {{ row.taxExcludedAmount !== null && row.taxExcludedAmount !== undefined ? Math.round(Number(row.taxExcludedAmount)).toLocaleString() : '' }}
           </template>
         </el-table-column>
         <el-table-column label="稅金" width="100" align="right">
           <template #default="{ row }">
-            {{ row.tax !== null && row.tax !== undefined ? Math.round(Number(row.tax)) : '' }}
+            {{ row.tax !== null && row.tax !== undefined ? Math.round(Number(row.tax)).toLocaleString() : '' }}
           </template>
         </el-table-column>
         <el-table-column label="含稅金額" width="120" align="right">
           <template #default="{ row }">
-            {{ row.taxIncludedAmount !== null && row.taxIncludedAmount !== undefined ? Math.round(Number(row.taxIncludedAmount)) : '' }}
+            {{ row.taxIncludedAmount !== null && row.taxIncludedAmount !== undefined ? Math.round(Number(row.taxIncludedAmount)).toLocaleString() : '' }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
@@ -126,10 +140,122 @@ const router = useRouter()
 const loading = ref(false)
 const invoices = ref<Invoice[]>([])
 const searchKeyword = ref('')
+const startDateInput = ref('')
+const endDateInput = ref('')
 const dateRange = ref<[string, string] | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+
+// 將民國年日期轉換為西元年日期
+const convertROCtoAD = (input: string): string | null => {
+  const cleaned = input.replace(/[\s\-\/]/g, '')
+
+  // 格式 1: 1141101 (7位數) - 民國年YYMMDD
+  if (/^\d{7}$/.test(cleaned)) {
+    const rocYear = parseInt(cleaned.substring(0, 3), 10)
+    const month = cleaned.substring(3, 5)
+    const day = cleaned.substring(5, 7)
+    const adYear = rocYear + 1911
+
+    const date = new Date(`${adYear}-${month}-${day}`)
+    if (!isNaN(date.getTime())) {
+      return `${adYear}-${month}-${day}`
+    }
+  }
+
+  // 格式 2: 1101 (4位數) - MMDD，使用當前民國年
+  if (/^\d{4}$/.test(cleaned)) {
+    const currentYear = new Date().getFullYear()
+    const currentROCYear = currentYear - 1911
+    const month = cleaned.substring(0, 2)
+    const day = cleaned.substring(2, 4)
+    const adYear = currentROCYear + 1911
+
+    const date = new Date(`${adYear}-${month}-${day}`)
+    if (!isNaN(date.getTime())) {
+      return `${adYear}-${month}-${day}`
+    }
+  }
+
+  // 格式 3: 1140102 (6位數) - 民國年YMMDD
+  if (/^\d{6}$/.test(cleaned)) {
+    const rocYear = parseInt(cleaned.substring(0, 3), 10)
+    const month = cleaned.substring(3, 4)
+    const day = cleaned.substring(4, 6)
+    const adYear = rocYear + 1911
+    const paddedMonth = month.padStart(2, '0')
+
+    const date = new Date(`${adYear}-${paddedMonth}-${day}`)
+    if (!isNaN(date.getTime())) {
+      return `${adYear}-${paddedMonth}-${day}`
+    }
+  }
+
+  return null
+}
+
+// 處理開始日期輸入失焦
+const handleStartDateBlur = () => {
+  if (!startDateInput.value) {
+    dateRange.value = null
+    return
+  }
+
+  const convertedDate = convertROCtoAD(startDateInput.value)
+  if (convertedDate) {
+    startDateInput.value = convertedDate.replace(/-/g, '/')
+    updateDateRange()
+  } else {
+    ElMessage.warning('開始日期格式錯誤，請輸入如 1141101 或 1101 的格式')
+  }
+}
+
+// 處理開始日期按下 Enter
+const handleStartDateEnter = (event: KeyboardEvent) => {
+  event.preventDefault()
+  handleStartDateBlur()
+  handleSearch()
+}
+
+// 處理結束日期輸入失焦
+const handleEndDateBlur = () => {
+  if (!endDateInput.value) {
+    dateRange.value = null
+    return
+  }
+
+  const convertedDate = convertROCtoAD(endDateInput.value)
+  if (convertedDate) {
+    endDateInput.value = convertedDate.replace(/-/g, '/')
+    updateDateRange()
+  } else {
+    ElMessage.warning('結束日期格式錯誤，請輸入如 1141101 或 1101 的格式')
+  }
+}
+
+// 處理結束日期按下 Enter
+const handleEndDateEnter = (event: KeyboardEvent) => {
+  event.preventDefault()
+  handleEndDateBlur()
+  handleSearch()
+}
+
+// 更新日期範圍
+const updateDateRange = () => {
+  const start = startDateInput.value.replace(/\//g, '-')
+  const end = endDateInput.value.replace(/\//g, '-')
+  
+  if (start && end) {
+    dateRange.value = [start, end]
+  } else if (start) {
+    dateRange.value = [start, start]
+  } else if (end) {
+    dateRange.value = [end, end]
+  } else {
+    dateRange.value = null
+  }
+}
 
 // 合併儲存格方法
 const objectSpanMethod = ({ row, column, rowIndex, columnIndex }: any) => {
@@ -253,6 +379,8 @@ const handleSearch = () => {
 // 清除篩選
 const handleClearFilters = () => {
   searchKeyword.value = ''
+  startDateInput.value = ''
+  endDateInput.value = ''
   dateRange.value = null
   currentPage.value = 1
   fetchInvoices()
@@ -404,20 +532,34 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 15px;
 }
 
 .header h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #303133;
 }
 
 .actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .voided-mark {
   color: #f56c6c;
   font-weight: bold;
+}
+
+/* 只有日期输入框的文字和placeholder置中 */
+:deep(.date-input .el-input__inner::placeholder) {
+  text-align: center;
+}
+
+:deep(.date-input .el-input__inner) {
+  text-align: center;
 }
 </style>
