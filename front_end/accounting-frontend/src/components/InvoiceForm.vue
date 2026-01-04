@@ -126,28 +126,21 @@
               label="數量"
               label-width="80px"
             >
-              <el-input-number
-                v-model="item.quantity"
-                :min="0"
-                :precision="0"
-                :controls="false"
-                style="width: 120%"
+              <el-input
+                :model-value="formatNumberForDisplay(item.quantity)"
                 placeholder="請輸入數量"
-                :formatter="formatNumber"
-                :parser="parseNumber"
-                @change="calculateTotals"
+                style="width: 120%"
+                @input="(val) => handleQuantityInput(item, val)"
+                @blur="handleQuantityBlur(item)"
               />
             </el-form-item>
           </el-col>
           <el-col :span="15">
             <el-form-item label="單價" label-width="80px">
-              <el-input-number
-                :model-value="item.quantity ? parseFloat(calculateUnitPrice(item)) : null"
-                :controls="false"
-                :precision="2"
+              <el-input
+                :model-value="formatNumberForDisplay(item.quantity ? parseFloat(calculateUnitPrice(item)) : null, 2)"
                 disabled
                 style="width: 100%"
-                :formatter="formatNumber"
               />
             </el-form-item>
           </el-col>
@@ -158,16 +151,12 @@
               label="金額"
               label-width="80px"
             >
-              <el-input-number
-                :model-value="getDisplayAmount(item)"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
+              <el-input
+                :model-value="formatNumberForDisplay(getDisplayAmount(item), 2)"
                 :placeholder="isDeductionItem(item.productName) ? '輸入正數，系統自動轉為減項' : '請輸入金額'"
-                :formatter="formatNumber"
-                :parser="parseNumber"
-                @update:model-value="(val) => handleAmountChange(item, val)"
+                style="width: 100%"
+                @input="(val) => handleAmountInput(item, val)"
+                @blur="handleAmountBlur(item)"
               />
             </el-form-item>
           </el-col>
@@ -342,18 +331,60 @@ const handleDatePickerChange = (value: string) => {
   }
 }
 
-// 千分位格式化
-const formatNumber = (value: number | string): string => {
-  if (!value && value !== 0) return ''
+// 千分位格式化顯示
+const formatNumberForDisplay = (value: number | null | undefined, decimals: number = 0): string => {
+  if (value === null || value === undefined || value === '') return ''
   const num = typeof value === 'string' ? parseFloat(value) : value
   if (isNaN(num)) return ''
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+  // 格式化為千分位
+  const parts = num.toFixed(decimals).split('.')
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  return parts.join('.')
 }
 
-// 解析千分位數字
-const parseNumber = (value: string): string => {
-  if (!value) return ''
-  return value.replace(/,/g, '')
+// 解析千分位數字為純數字
+const parseNumberFromInput = (value: string): number | null => {
+  if (!value || value.trim() === '') return null
+  const cleaned = value.replace(/,/g, '').trim()
+  const num = parseFloat(cleaned)
+  return isNaN(num) ? null : num
+}
+
+// 處理數量輸入
+const handleQuantityInput = (item: InvoiceItem, value: string) => {
+  // 暫存輸入值，允許使用者輸入
+  const num = parseNumberFromInput(value)
+  if (num !== null) {
+    item.quantity = Math.floor(num) // 數量只保留整數
+  } else {
+    item.quantity = null as any
+  }
+}
+
+// 處理數量失焦
+const handleQuantityBlur = (item: InvoiceItem) => {
+  calculateTotals()
+}
+
+// 處理金額輸入
+const handleAmountInput = (item: InvoiceItem, value: string) => {
+  const num = parseNumberFromInput(value)
+  if (num !== null) {
+    // 如果是減項商品，自動轉為負數
+    if (isDeductionItem(item.productName)) {
+      item.amount = -Math.abs(num)
+    } else {
+      item.amount = Math.abs(num)
+    }
+  } else {
+    item.amount = null as any
+  }
+}
+
+// 處理金額失焦
+const handleAmountBlur = (item: InvoiceItem) => {
+  calculateTotals()
 }
 
 const rules: FormRules = {
@@ -399,17 +430,6 @@ const isDeductionItem = (productName: string) => {
 // 取得顯示金額（絕對值）
 const getDisplayAmount = (item: InvoiceItem) => {
   return Math.abs(item.amount || 0)
-}
-
-// 處理金額變更
-const handleAmountChange = (item: InvoiceItem, value: number) => {
-  // 如果是減項商品（品名包含「減」），自動轉為負數
-  if (isDeductionItem(item.productName)) {
-    item.amount = -Math.abs(value || 0)
-  } else {
-    item.amount = Math.abs(value || 0)
-  }
-  calculateTotals()
 }
 
 // 計算單價：金額 ÷ 數量
