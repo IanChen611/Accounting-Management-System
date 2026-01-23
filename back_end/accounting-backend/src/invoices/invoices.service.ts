@@ -287,23 +287,8 @@ export class InvoicesService {
       relations: ['items'],
     });
 
-    // 自定義排序：先按發票字母分組，再按日期，最後按編號
+    // 排序：優先按發票號碼排序
     return invoices.sort((a, b) => {
-      // 提取發票號碼的英文字母部分（前兩個字元）
-      const prefixA = a.invoiceNumber.substring(0, 2);
-      const prefixB = b.invoiceNumber.substring(0, 2);
-
-      // 1. 先按英文字母排序
-      if (prefixA !== prefixB) {
-        return prefixA.localeCompare(prefixB);
-      }
-
-      // 2. 再按日期排序
-      if (a.invoiceDate !== b.invoiceDate) {
-        return a.invoiceDate.localeCompare(b.invoiceDate);
-      }
-
-      // 3. 最後按發票號碼排序
       return a.invoiceNumber.localeCompare(b.invoiceNumber);
     });
   }

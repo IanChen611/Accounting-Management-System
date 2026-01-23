@@ -639,7 +639,8 @@ watch(
   (newNames, oldNames) => {
     if (oldNames) {
       formData.items.forEach((item, index) => {
-        if (newNames[index] !== oldNames[index] && item.amount !== 0) {
+        // 只有當金額已經有值（不是 null、undefined 或 0）時才調整正負號
+        if (newNames[index] !== oldNames[index] && item.amount !== null && item.amount !== undefined && item.amount !== 0) {
           // 品名改變時，根據新品名重新設定金額正負號
           if (isDeductionItem(newNames[index])) {
             // 改成減項商品，轉為負數
