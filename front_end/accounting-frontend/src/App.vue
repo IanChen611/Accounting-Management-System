@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterView, useRouter, useRoute } from 'vue-router'
-import { Document, HomeFilled, InfoFilled, User, Plus } from '@element-plus/icons-vue'
+import { Document, HomeFilled, InfoFilled, User, Plus, Message } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -14,6 +14,10 @@ const getActiveMenu = () => {
   // 如果路徑以 /customers 開頭，回傳 /customers
   if (path.startsWith('/customers')) {
     return '/customers'
+  }
+  // 如果路徑以 /mailing-labels 開頭，回傳 /mailing-labels
+  if (path.startsWith('/mailing-labels')) {
+    return '/mailing-labels'
   }
   // 其他情況回傳實際路徑
   return path
@@ -50,6 +54,10 @@ const handleCreateInvoice = () => {
           <el-menu-item index="/customers">
             <el-icon><User /></el-icon>
             客戶管理
+          </el-menu-item>
+          <el-menu-item index="/mailing-labels">
+            <el-icon><Message /></el-icon>
+            寄信標籤
           </el-menu-item>
           <el-menu-item index="/about">
             <el-icon><InfoFilled /></el-icon>

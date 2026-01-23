@@ -34,6 +34,11 @@ const router = createRouter({
       name: 'customers',
       component: () => import('../views/CustomerListView.vue'),
     },
+    {
+      path: '/mailing-labels',
+      name: 'mailing-labels',
+      component: () => import('../views/MailingLabelView.vue'),
+    },
   ],
 })
 
