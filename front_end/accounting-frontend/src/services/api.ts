@@ -65,7 +65,11 @@ export const invoiceApi = {
 
   // 匯出 Excel
   exportExcel: (params?: { startDate?: string; endDate?: string }) =>
-    apiClient.get('/invoices/export/excel', { params, responseType: 'blob' })
+    apiClient.get('/invoices/export/excel', { params, responseType: 'blob' }),
+
+  // 取得發票日期限制（根據同字軌的前後發票）
+  getDateConstraints: (invoiceNumber: string) =>
+    apiClient.get(`/invoices/date-constraints/${encodeURIComponent(invoiceNumber)}`)
 }
 
 // 客戶相關 API

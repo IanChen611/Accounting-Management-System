@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
+import { Repository, Like, Between, MoreThanOrEqual, LessThanOrEqual, LessThan, MoreThan } from 'typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { InvoiceItem } from './entities/invoice-item.entity';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
@@ -291,5 +291,48 @@ export class InvoicesService {
     return invoices.sort((a, b) => {
       return a.invoiceNumber.localeCompare(b.invoiceNumber);
     });
+  }
+
+  // 取得發票日期限制（根據同字軌的前後發票）
+  async getInvoiceDateConstraints(invoiceNumber: string): Promise<{
+    minDate: string | null;
+    maxDate: string | null;
+    prevInvoice: { invoiceNumber: string; invoiceDate: string } | null;
+    nextInvoice: { invoiceNumber: string; invoiceDate: string } | null;
+  }> {
+    // 發票號碼格式：XX12345678（兩個英文字母 + 八位數字）
+    const prefix = invoiceNumber.substring(0, 2);
+
+    // 使用 QueryBuilder 來避免 TypeORM 的 select 問題
+    // 查詢同字軌中號碼比當前小的最大發票（前一張）
+    const prevInvoice = await this.invoicesRepository
+      .createQueryBuilder('invoice')
+      .select(['invoice.invoiceNumber', 'invoice.invoiceDate'])
+      .where('invoice.invoiceNumber < :invoiceNumber', { invoiceNumber })
+      .andWhere('invoice.invoiceNumber LIKE :prefix', { prefix: `${prefix}%` })
+      .orderBy('invoice.invoiceNumber', 'DESC')
+      .getOne();
+
+    // 查詢同字軌中號碼比當前大的最小發票（下一張）
+    const nextInvoice = await this.invoicesRepository
+      .createQueryBuilder('invoice')
+      .select(['invoice.invoiceNumber', 'invoice.invoiceDate'])
+      .where('invoice.invoiceNumber > :invoiceNumber', { invoiceNumber })
+      .andWhere('invoice.invoiceNumber LIKE :prefix', { prefix: `${prefix}%` })
+      .orderBy('invoice.invoiceNumber', 'ASC')
+      .getOne();
+
+    return {
+      // 最小日期限制：前一張發票的日期（當前發票日期必須 >= 此日期）
+      minDate: prevInvoice ? prevInvoice.invoiceDate : null,
+      // 最大日期限制：下一張發票的日期（當前發票日期必須 <= 此日期）
+      maxDate: nextInvoice ? nextInvoice.invoiceDate : null,
+      prevInvoice: prevInvoice
+        ? { invoiceNumber: prevInvoice.invoiceNumber, invoiceDate: prevInvoice.invoiceDate }
+        : null,
+      nextInvoice: nextInvoice
+        ? { invoiceNumber: nextInvoice.invoiceNumber, invoiceDate: nextInvoice.invoiceDate }
+        : null,
+    };
   }
 }

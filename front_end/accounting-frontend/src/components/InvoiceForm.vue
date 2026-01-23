@@ -34,7 +34,11 @@
     </el-form-item>
 
     <el-form-item label="發票號碼" prop="invoiceNumber">
-      <el-input v-model="formData.invoiceNumber" placeholder="請輸入發票號碼（格式：XX12345678）" />
+      <el-input
+        v-model="formData.invoiceNumber"
+        placeholder="請輸入發票號碼（格式：XX12345678）"
+        @blur="handleInvoiceNumberBlur"
+      />
       <div class="field-hint">格式為兩個大寫英文字母 + 八位數字，例如：AB12345678</div>
     </el-form-item>
 
@@ -124,14 +128,13 @@
               label="數量"
               label-width="80px"
             >
-              <el-input-number
-                v-model="item.quantity"
+              <el-input
+                v-model="item.quantityDisplay"
+                @focus="handleQuantityFocus(item)"
+                @blur="handleQuantityBlur(item)"
+                @keydown.enter="handleQuantityEnter($event, item, index)"
                 placeholder="請輸入數量"
-                :controls="false"
-                :precision="0"
                 style="width: 100%"
-                :formatter="(value) => value ? `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''"
-                :parser="(value) => value.replace(/,/g, '')"
               />
             </el-form-item>
           </el-col>
@@ -151,19 +154,13 @@
               label="金額"
               label-width="80px"
             >
-              <el-input-number
-                v-model="item.amount"
-                :placeholder="isDeductionItem(item.productName) ? '輸入正數，系統自動轉為減項' : '請輸入金額'"
-                :controls="false"
-                :precision="2"
-                style="width: 100%"
-                :formatter="(value) => value !== null && value !== undefined ? `${Math.abs(value).toFixed(2)}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''"
-                :parser="(value) => {
-                  const num = parseFloat(value.replace(/,/g, ''))
-                  if (isNaN(num)) return null
-                  return isDeductionItem(item.productName) ? -Math.abs(num) : Math.abs(num)
-                }"
+              <el-input
+                v-model="item.amountDisplay"
+                @focus="handleAmountFocus(item)"
                 @blur="handleAmountBlur(item)"
+                @keydown.enter="handleAmountEnter($event, item)"
+                :placeholder="isDeductionItem(item.productName) ? '輸入正數，系統自動轉為減項' : '請輸入金額'"
+                style="width: 100%"
               />
             </el-form-item>
           </el-col>
@@ -202,7 +199,7 @@
 import { ref, reactive, watch, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Delete, Calendar } from '@element-plus/icons-vue'
-import { customerApi, type Invoice, type InvoiceItem } from '@/services/api'
+import { customerApi, invoiceApi, type Invoice, type InvoiceItem } from '@/services/api'
 
 interface Props {
   initialData?: Invoice
@@ -236,6 +233,19 @@ const customersLoading = ref(false)
 const allCustomers = ref<any[]>([])
 const lastTypedCustomerCode = ref('') // 保存用户最后输入的代号
 
+// 日期限制相關
+const dateConstraints = ref<{
+  minDate: string | null
+  maxDate: string | null
+  prevInvoice: { invoiceNumber: string; invoiceDate: string } | null
+  nextInvoice: { invoiceNumber: string; invoiceDate: string } | null
+}>({
+  minDate: null,
+  maxDate: null,
+  prevInvoice: null,
+  nextInvoice: null
+})
+
 const formData = reactive<Invoice>({
   invoiceDate: '',
   invoiceNumber: '',
@@ -245,7 +255,9 @@ const formData = reactive<Invoice>({
     {
       productName: '',
       quantity: null as any,
-      amount: null as any
+      quantityDisplay: '',
+      amount: null as any,
+      amountDisplay: ''
     }
   ],
   taxExcludedAmount: 0,
@@ -307,8 +319,66 @@ const convertROCtoAD = (input: string): string | null => {
   return null
 }
 
+// 西元年轉民國年顯示格式
+const formatToROCDate = (dateStr: string): string => {
+  if (!dateStr) return ''
+  const [year, month, day] = dateStr.split('-')
+  const rocYear = parseInt(year) - 1911
+  return `${rocYear}/${month}/${day}`
+}
+
+// 檢查發票日期是否符合同字軌限制
+const validateInvoiceDateConstraints = async (): Promise<boolean> => {
+  const invoiceNumber = formData.invoiceNumber
+  const invoiceDate = formData.invoiceDate
+
+  // 如果發票號碼或日期未填寫，不進行驗證
+  if (!invoiceNumber || !invoiceDate) return true
+
+  // 驗證發票號碼格式
+  if (!/^[A-Z]{2}\d{8}$/.test(invoiceNumber)) return true
+
+  try {
+    const response = await invoiceApi.getDateConstraints(invoiceNumber)
+    const constraints = response.data
+    dateConstraints.value = constraints
+
+    // 檢查最小日期限制（前一張發票的日期）
+    if (constraints.minDate && invoiceDate < constraints.minDate) {
+      ElMessage.error(
+        `發票日期不可早於前一張發票 ${constraints.prevInvoice?.invoiceNumber} 的日期 ${formatToROCDate(constraints.minDate)}`
+      )
+      return false
+    }
+
+    // 檢查最大日期限制（下一張發票的日期）
+    if (constraints.maxDate && invoiceDate > constraints.maxDate) {
+      ElMessage.error(
+        `發票日期不可晚於後一張發票 ${constraints.nextInvoice?.invoiceNumber} 的日期 ${formatToROCDate(constraints.maxDate)}`
+      )
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error('檢查發票日期限制失敗:', error)
+    return true // API 失敗時不阻擋用戶操作
+  }
+}
+
+// 處理發票號碼輸入完成（blur 事件）
+const handleInvoiceNumberBlur = async () => {
+  // 自動轉換為大寫
+  formData.invoiceNumber = formData.invoiceNumber.toUpperCase()
+
+  // 如果日期已填寫，進行驗證
+  if (formData.invoiceDate) {
+    await validateInvoiceDateConstraints()
+  }
+}
+
 // 處理日期輸入失焦
-const handleDateInputBlur = () => {
+const handleDateInputBlur = async () => {
   if (!dateInputValue.value) return
 
   const convertedDate = convertROCtoAD(dateInputValue.value)
@@ -316,6 +386,11 @@ const handleDateInputBlur = () => {
     formData.invoiceDate = convertedDate
     // 更新顯示值為 YYYY/MM/DD 格式
     dateInputValue.value = convertedDate.replace(/-/g, '/')
+
+    // 如果發票號碼已填寫，進行日期限制驗證
+    if (formData.invoiceNumber) {
+      await validateInvoiceDateConstraints()
+    }
   } else {
     ElMessage.warning('日期格式錯誤，請輸入如 1141101 或 1101 的格式')
   }
@@ -334,9 +409,14 @@ const handleDateInputEnter = (event: KeyboardEvent) => {
 }
 
 // 處理日期選擇器變更
-const handleDatePickerChange = (value: string) => {
+const handleDatePickerChange = async (value: string) => {
   if (value) {
     dateInputValue.value = value.replace(/-/g, '/')
+
+    // 如果發票號碼已填寫，進行日期限制驗證
+    if (formData.invoiceNumber) {
+      await validateInvoiceDateConstraints()
+    }
   }
 }
 
@@ -352,9 +432,100 @@ const formatNumberForDisplay = (value: number | null | undefined, decimals: numb
   return parts.join('.')
 }
 
-// 處理金額失焦
-const handleAmountBlur = (item: InvoiceItem) => {
+// 金額顯示格式化（千分位，兩位小數）
+const formatAmountToDisplay = (amount: number | null | undefined): string => {
+  if (amount === null || amount === undefined) return ''
+  const absValue = Math.abs(amount)
+  // 格式化為千分位，保留兩位小數
+  const parts = absValue.toFixed(2).split('.')
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  return parts.join('.')
+}
+
+// 數量顯示格式化（千分位，整數）
+const formatQuantityToDisplay = (quantity: number | null | undefined): string => {
+  if (quantity === null || quantity === undefined) return ''
+  // 格式化為千分位，整數
+  return Math.round(quantity).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+// 處理數量獲得焦點（移除格式化，顯示原始數字）
+const handleQuantityFocus = (item: any) => {
+  if (item.quantity !== null && item.quantity !== undefined) {
+    // 顯示不帶千分位的數字
+    item.quantityDisplay = item.quantity.toString()
+  }
+}
+
+// 處理數量失焦（解析輸入並格式化顯示）
+const handleQuantityBlur = (item: any) => {
+  const value = item.quantityDisplay
+  // 移除千分位逗號
+  const cleanValue = value ? value.replace(/,/g, '') : ''
+  const num = parseInt(cleanValue, 10)
+
+  if (cleanValue === '' || isNaN(num)) {
+    item.quantity = null
+    item.quantityDisplay = ''
+  } else {
+    item.quantity = num
+    // 格式化顯示
+    item.quantityDisplay = formatQuantityToDisplay(item.quantity)
+  }
+
   calculateTotals()
+}
+
+// 處理數量按下 Enter（格式化並跳到金額欄位）
+const handleQuantityEnter = (event: KeyboardEvent, item: any, index: number) => {
+  event.preventDefault()
+  // 先執行格式化
+  handleQuantityBlur(item)
+  // 跳到同一商品的金額欄位
+  setTimeout(() => {
+    const amountInputs = document.querySelectorAll('input[placeholder*="請輸入金額"], input[placeholder*="輸入正數"]')
+    if (amountInputs[index]) {
+      (amountInputs[index] as HTMLInputElement).focus()
+    }
+  }, 50)
+}
+
+// 處理金額獲得焦點（移除格式化，顯示原始數字）
+const handleAmountFocus = (item: any) => {
+  if (item.amount !== null && item.amount !== undefined) {
+    // 顯示不帶千分位的數字
+    item.amountDisplay = Math.abs(item.amount).toString()
+  }
+}
+
+// 處理金額失焦（解析輸入並格式化顯示）
+const handleAmountBlur = (item: any) => {
+  const value = item.amountDisplay
+  // 移除千分位逗號
+  const cleanValue = value ? value.replace(/,/g, '') : ''
+  const num = parseFloat(cleanValue)
+
+  if (cleanValue === '' || isNaN(num)) {
+    item.amount = null
+    item.amountDisplay = ''
+  } else {
+    // 根據商品名稱決定正負號
+    item.amount = isDeductionItem(item.productName) ? -Math.abs(num) : Math.abs(num)
+    // 格式化顯示
+    item.amountDisplay = formatAmountToDisplay(item.amount)
+  }
+
+  calculateTotals()
+}
+
+// 處理金額按下 Enter（格式化並移開焦點）
+const handleAmountEnter = (event: KeyboardEvent, item: any) => {
+  event.preventDefault()
+  // 先執行格式化
+  handleAmountBlur(item)
+  // 移開焦點
+  const target = event.target as HTMLInputElement
+  target.blur()
 }
 
 const rules: FormRules = {
@@ -431,7 +602,9 @@ const addItem = () => {
   formData.items.push({
     productName: '',
     quantity: null as any,
-    amount: null as any
+    quantityDisplay: '',
+    amount: null as any,
+    amountDisplay: ''
   })
 }
 
@@ -457,7 +630,9 @@ const handleVoidedChange = (value: boolean) => {
       {
         productName: '',
         quantity: null as any,
-        amount: null as any
+        quantityDisplay: '',
+        amount: null as any,
+        amountDisplay: ''
       }
     ]
   }
@@ -600,6 +775,14 @@ const handleCustomerCodeEnterKey = async (event: KeyboardEvent) => {
 const handleSubmit = async () => {
   if (!formRef.value) return
 
+  // 先驗證日期限制
+  if (!formData.isVoided) {
+    const isDateValid = await validateInvoiceDateConstraints()
+    if (!isDateValid) {
+      return
+    }
+  }
+
   await formRef.value.validate((valid) => {
     if (valid) {
       // 如果是作廢發票，確保相關欄位為空
@@ -638,7 +821,7 @@ watch(
   () => formData.items.map(item => item.productName),
   (newNames, oldNames) => {
     if (oldNames) {
-      formData.items.forEach((item, index) => {
+      formData.items.forEach((item: any, index) => {
         // 只有當金額已經有值（不是 null、undefined 或 0）時才調整正負號
         if (newNames[index] !== oldNames[index] && item.amount !== null && item.amount !== undefined && item.amount !== 0) {
           // 品名改變時，根據新品名重新設定金額正負號
@@ -649,6 +832,8 @@ watch(
             // 改成一般商品，轉為正數
             item.amount = Math.abs(item.amount)
           }
+          // 同步更新顯示值
+          item.amountDisplay = formatAmountToDisplay(item.amount)
         }
       })
       calculateTotals()
@@ -686,7 +871,9 @@ const resetFormWithIncrementedInvoiceNumber = () => {
     {
       productName: '',
       quantity: null as any,
-      amount: null as any
+      quantityDisplay: '',
+      amount: null as any,
+      amountDisplay: ''
     }
   ]
   formData.taxExcludedAmount = 0
@@ -741,17 +928,25 @@ onMounted(async () => {
 
     // 轉換 items 中的數字欄位（從 API 回傳的可能是字串）
     if (formData.items && formData.items.length > 0) {
-      formData.items = formData.items.map(item => ({
-        productName: item.productName,
-        quantity: Number(item.quantity),
-        amount: Number(item.amount)
-      }))
+      formData.items = formData.items.map(item => {
+        const quantity = Number(item.quantity)
+        const amount = Number(item.amount)
+        return {
+          productName: item.productName,
+          quantity: quantity,
+          quantityDisplay: formatQuantityToDisplay(quantity),
+          amount: amount,
+          amountDisplay: formatAmountToDisplay(amount)
+        }
+      })
     } else {
       formData.items = [
         {
           productName: '',
           quantity: null as any,
-          amount: null as any
+          quantityDisplay: '',
+          amount: null as any,
+          amountDisplay: ''
         }
       ]
     }

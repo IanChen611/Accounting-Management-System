@@ -165,6 +165,11 @@ export class InvoicesController {
     return res.status(HttpStatus.OK).send(excelBuffer);
   }
 
+  @Get('date-constraints/:invoiceNumber')
+  async getDateConstraints(@Param('invoiceNumber') invoiceNumber: string) {
+    return await this.invoicesService.getInvoiceDateConstraints(invoiceNumber);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return await this.invoicesService.findOne(Number(id));
