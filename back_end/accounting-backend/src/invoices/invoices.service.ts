@@ -293,8 +293,11 @@ export class InvoicesService {
     });
   }
 
-  // 取得發票日期限制（根據同字軌的前後發票）
-  async getInvoiceDateConstraints(invoiceNumber: string): Promise<{
+  // 取得發票日期限制（根據同字軌的前後一號發票）
+  async getInvoiceDateConstraints(
+    invoiceNumber: string,
+    excludeId?: number,
+  ): Promise<{
     minDate: string | null;
     maxDate: string | null;
     prevInvoice: { invoiceNumber: string; invoiceDate: string } | null;
@@ -302,30 +305,47 @@ export class InvoicesService {
   }> {
     // 發票號碼格式：XX12345678（兩個英文字母 + 八位數字）
     const prefix = invoiceNumber.substring(0, 2);
+    const numberPart = invoiceNumber.substring(2);
+    const currentNumber = parseInt(numberPart, 10);
 
-    // 使用 QueryBuilder 來避免 TypeORM 的 select 問題
-    // 查詢同字軌中號碼比當前小的最大發票（前一張）
-    const prevInvoice = await this.invoicesRepository
+    // 計算前後一號的發票號碼
+    const prevNumber = currentNumber - 1;
+    const nextNumber = currentNumber + 1;
+
+    // 前一號發票號碼（補零到 8 位數）
+    const prevInvoiceNumber = prevNumber >= 0 ? prefix + prevNumber.toString().padStart(8, '0') : null;
+
+    // 後一號發票號碼（補零到 8 位數）
+    const nextInvoiceNumber = nextNumber <= 99999999 ? prefix + nextNumber.toString().padStart(8, '0') : null;
+
+    // 查詢前一號發票（如果是編輯模式，排除當前發票的 ID）
+    let prevInvoiceQuery = this.invoicesRepository
       .createQueryBuilder('invoice')
       .select(['invoice.invoiceNumber', 'invoice.invoiceDate'])
-      .where('invoice.invoiceNumber < :invoiceNumber', { invoiceNumber })
-      .andWhere('invoice.invoiceNumber LIKE :prefix', { prefix: `${prefix}%` })
-      .orderBy('invoice.invoiceNumber', 'DESC')
-      .getOne();
+      .where('invoice.invoiceNumber = :prevInvoiceNumber', { prevInvoiceNumber });
 
-    // 查詢同字軌中號碼比當前大的最小發票（下一張）
-    const nextInvoice = await this.invoicesRepository
+    if (excludeId !== undefined) {
+      prevInvoiceQuery = prevInvoiceQuery.andWhere('invoice.id != :excludeId', { excludeId });
+    }
+
+    const prevInvoice = prevInvoiceNumber ? await prevInvoiceQuery.getOne() : null;
+
+    // 查詢後一號發票（如果是編輯模式，排除當前發票的 ID）
+    let nextInvoiceQuery = this.invoicesRepository
       .createQueryBuilder('invoice')
       .select(['invoice.invoiceNumber', 'invoice.invoiceDate'])
-      .where('invoice.invoiceNumber > :invoiceNumber', { invoiceNumber })
-      .andWhere('invoice.invoiceNumber LIKE :prefix', { prefix: `${prefix}%` })
-      .orderBy('invoice.invoiceNumber', 'ASC')
-      .getOne();
+      .where('invoice.invoiceNumber = :nextInvoiceNumber', { nextInvoiceNumber });
+
+    if (excludeId !== undefined) {
+      nextInvoiceQuery = nextInvoiceQuery.andWhere('invoice.id != :excludeId', { excludeId });
+    }
+
+    const nextInvoice = nextInvoiceNumber ? await nextInvoiceQuery.getOne() : null;
 
     return {
-      // 最小日期限制：前一張發票的日期（當前發票日期必須 >= 此日期）
+      // 最小日期限制：前一號發票的日期（當前發票日期必須 >= 此日期）
       minDate: prevInvoice ? prevInvoice.invoiceDate : null,
-      // 最大日期限制：下一張發票的日期（當前發票日期必須 <= 此日期）
+      // 最大日期限制：後一號發票的日期（當前發票日期必須 <= 此日期）
       maxDate: nextInvoice ? nextInvoice.invoiceDate : null,
       prevInvoice: prevInvoice
         ? { invoiceNumber: prevInvoice.invoiceNumber, invoiceDate: prevInvoice.invoiceDate }

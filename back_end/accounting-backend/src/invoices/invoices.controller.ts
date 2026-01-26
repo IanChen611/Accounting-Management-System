@@ -166,8 +166,14 @@ export class InvoicesController {
   }
 
   @Get('date-constraints/:invoiceNumber')
-  async getDateConstraints(@Param('invoiceNumber') invoiceNumber: string) {
-    return await this.invoicesService.getInvoiceDateConstraints(invoiceNumber);
+  async getDateConstraints(
+    @Param('invoiceNumber') invoiceNumber: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    return await this.invoicesService.getInvoiceDateConstraints(
+      invoiceNumber,
+      excludeId ? Number(excludeId) : undefined,
+    );
   }
 
   @Get(':id')
