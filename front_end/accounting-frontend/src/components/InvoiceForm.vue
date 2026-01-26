@@ -13,24 +13,22 @@
         @blur="handleDateInputBlur"
         @keydown.enter="handleDateInputEnter"
         ref="dateInputRef"
-        style="width: 100%"
       >
-        <template #suffix>
-          <el-date-picker
-            v-model="formData.invoiceDate"
-            type="date"
-            format="YYYY/MM/DD"
-            value-format="YYYY-MM-DD"
-            style="width: 32px"
-            @change="handleDatePickerChange"
-            :teleported="false"
-          >
-            <template #default>
-              <el-icon><Calendar /></el-icon>
-            </template>
-          </el-date-picker>
+        <template #append>
+          <el-button @click="showDatePicker" :icon="Calendar" />
         </template>
       </el-input>
+      <el-date-picker
+        ref="datePickerRef"
+        v-model="formData.invoiceDate"
+        type="date"
+        format="YYYY/MM/DD"
+        value-format="YYYY-MM-DD"
+        @change="handleDatePickerChange"
+        :teleported="true"
+        popper-class="invoice-date-picker"
+        style="display: none"
+      />
     </el-form-item>
 
     <el-form-item label="發票號碼" prop="invoiceNumber">
@@ -227,11 +225,19 @@ const productOptions = [
 
 const formRef = ref<FormInstance>()
 const dateInputRef = ref()
+const datePickerRef = ref()
 const customerSelectRef = ref()
 const dateInputValue = ref('')
 const customersLoading = ref(false)
 const allCustomers = ref<any[]>([])
 const lastTypedCustomerCode = ref('') // 保存用户最后输入的代号
+
+// 顯示日期選擇器
+const showDatePicker = () => {
+  if (datePickerRef.value) {
+    datePickerRef.value.focus()
+  }
+}
 
 // 日期限制相關
 const dateConstraints = ref<{
@@ -1045,3 +1051,4 @@ onMounted(async () => {
   color: #606266;
 }
 </style>
+

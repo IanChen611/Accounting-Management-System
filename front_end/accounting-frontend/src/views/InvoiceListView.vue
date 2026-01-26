@@ -33,6 +33,20 @@
             class="date-input"
             @blur="handleStartDateBlur"
             @keydown.enter="handleStartDateEnter"
+          >
+            <template #append>
+              <el-button @click="showStartDatePicker" :icon="Calendar" />
+            </template>
+          </el-input>
+          <el-date-picker
+            ref="startDatePickerRef"
+            v-model="startDate"
+            type="date"
+            format="YYYY/MM/DD"
+            value-format="YYYY-MM-DD"
+            @change="handleStartDatePickerChange"
+            :teleported="true"
+            style="display: none"
           />
           <span style="margin: 0 5px; white-space: nowrap;">至</span>
           <el-input
@@ -43,6 +57,20 @@
             class="date-input"
             @blur="handleEndDateBlur"
             @keydown.enter="handleEndDateEnter"
+          >
+            <template #append>
+              <el-button @click="showEndDatePicker" :icon="Calendar" />
+            </template>
+          </el-input>
+          <el-date-picker
+            ref="endDatePickerRef"
+            v-model="endDate"
+            type="date"
+            format="YYYY/MM/DD"
+            value-format="YYYY-MM-DD"
+            @change="handleEndDatePickerChange"
+            :teleported="true"
+            style="display: none"
           />
         </div>
 
@@ -132,7 +160,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Calendar } from '@element-plus/icons-vue'
 import { invoiceApi, type Invoice } from '@/services/api'
 
 const router = useRouter()
@@ -142,10 +170,46 @@ const invoices = ref<Invoice[]>([])
 const searchKeyword = ref('')
 const startDateInput = ref('')
 const endDateInput = ref('')
+const startDate = ref('')
+const endDate = ref('')
+const startDatePickerRef = ref()
+const endDatePickerRef = ref()
 const dateRange = ref<[string, string] | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+
+// 顯示開始日期選擇器
+const showStartDatePicker = () => {
+  if (startDatePickerRef.value) {
+    startDatePickerRef.value.focus()
+  }
+}
+
+// 顯示結束日期選擇器
+const showEndDatePicker = () => {
+  if (endDatePickerRef.value) {
+    endDatePickerRef.value.focus()
+  }
+}
+
+// 處理開始日期選擇器變更
+const handleStartDatePickerChange = (value: string) => {
+  if (value) {
+    startDateInput.value = value.replace(/-/g, '/')
+    dateRange.value = [value, endDate.value || value]
+    fetchInvoices()
+  }
+}
+
+// 處理結束日期選擇器變更
+const handleEndDatePickerChange = (value: string) => {
+  if (value) {
+    endDateInput.value = value.replace(/-/g, '/')
+    dateRange.value = [startDate.value || value, value]
+    fetchInvoices()
+  }
+}
 
 // 將民國年日期轉換為西元年日期
 const convertROCtoAD = (input: string): string | null => {

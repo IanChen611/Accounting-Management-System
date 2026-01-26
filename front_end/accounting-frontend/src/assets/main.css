@@ -20,3 +20,25 @@ a,
     background-color: hsla(160, 100%, 37%, 0.2);
   }
 }
+
+/* 確保 Element Plus 彈出層在最上層 */
+.el-popper,
+.el-picker__popper,
+.el-select-dropdown,
+.el-dropdown-menu {
+  z-index: 9999 !important;
+}
+
+/* 確保日期選擇器面板在最上層 */
+.el-picker-panel {
+  z-index: 9999 !important;
+}
+
+/* 確保所有表單元素不會裁切彈出內容 */
+.el-form,
+.el-form-item,
+.el-form-item__content,
+.el-card,
+.el-card__body {
+  overflow: visible !important;
+}
