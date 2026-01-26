@@ -15,20 +15,22 @@
         ref="dateInputRef"
       >
         <template #append>
-          <el-button @click="showDatePicker" :icon="Calendar" />
+          <div style="position: relative; display: inline-block;">
+            <el-button @click="showDatePicker" :icon="Calendar" />
+            <el-date-picker
+              ref="datePickerRef"
+              v-model="formData.invoiceDate"
+              type="date"
+              format="YYYY/MM/DD"
+              value-format="YYYY-MM-DD"
+              @change="handleDatePickerChange"
+              :teleported="true"
+              popper-class="invoice-date-picker"
+              style="position: absolute; top: 0; left: 0; width: 1px; height: 100%; opacity: 0; cursor: pointer;"
+            />
+          </div>
         </template>
       </el-input>
-      <el-date-picker
-        ref="datePickerRef"
-        v-model="formData.invoiceDate"
-        type="date"
-        format="YYYY/MM/DD"
-        value-format="YYYY-MM-DD"
-        @change="handleDatePickerChange"
-        :teleported="true"
-        popper-class="invoice-date-picker"
-        style="display: none"
-      />
     </el-form-item>
 
     <el-form-item label="發票號碼" prop="invoiceNumber">
@@ -36,6 +38,7 @@
         v-model="formData.invoiceNumber"
         placeholder="請輸入發票號碼（格式：XX12345678）"
         @blur="handleInvoiceNumberBlur"
+        @keydown.enter="handleInvoiceNumberEnter"
       />
       <div class="field-hint">格式為兩個大寫英文字母 + 八位數字，例如：AB12345678</div>
     </el-form-item>
@@ -235,7 +238,12 @@ const lastTypedCustomerCode = ref('') // 保存用户最后输入的代号
 // 顯示日期選擇器
 const showDatePicker = () => {
   if (datePickerRef.value) {
-    datePickerRef.value.focus()
+    // 嘗試使用 Element Plus 內部方法
+    if (typeof datePickerRef.value.handleOpen === 'function') {
+      datePickerRef.value.handleOpen()
+    } else if (typeof datePickerRef.value.focus === 'function') {
+      datePickerRef.value.focus()
+    }
   }
 }
 
@@ -380,6 +388,18 @@ const handleInvoiceNumberBlur = async () => {
   // 如果日期已填寫，進行驗證
   if (formData.invoiceDate) {
     await validateInvoiceDateConstraints()
+  }
+}
+
+// 處理發票號碼按下 Enter
+const handleInvoiceNumberEnter = async (event: KeyboardEvent) => {
+  event.preventDefault()
+  // 先執行 blur 邏輯
+  await handleInvoiceNumberBlur()
+
+  // 如果不是作廢發票，跳到客戶代號欄位
+  if (!formData.isVoided && customerSelectRef.value) {
+    customerSelectRef.value.focus()
   }
 }
 

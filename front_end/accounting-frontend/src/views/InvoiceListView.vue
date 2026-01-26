@@ -35,19 +35,21 @@
             @keydown.enter="handleStartDateEnter"
           >
             <template #append>
-              <el-button @click="showStartDatePicker" :icon="Calendar" />
+              <div style="position: relative; display: inline-block;">
+                <el-button @click="showStartDatePicker" :icon="Calendar" />
+                <el-date-picker
+                  ref="startDatePickerRef"
+                  v-model="startDate"
+                  type="date"
+                  format="YYYY/MM/DD"
+                  value-format="YYYY-MM-DD"
+                  @change="handleStartDatePickerChange"
+                  :teleported="true"
+                  style="position: absolute; top: 0; left: 0; width: 1px; height: 100%; opacity: 0; cursor: pointer;"
+                />
+              </div>
             </template>
           </el-input>
-          <el-date-picker
-            ref="startDatePickerRef"
-            v-model="startDate"
-            type="date"
-            format="YYYY/MM/DD"
-            value-format="YYYY-MM-DD"
-            @change="handleStartDatePickerChange"
-            :teleported="true"
-            style="display: none"
-          />
           <span style="margin: 0 5px; white-space: nowrap;">至</span>
           <el-input
             v-model="endDateInput"
@@ -59,19 +61,21 @@
             @keydown.enter="handleEndDateEnter"
           >
             <template #append>
-              <el-button @click="showEndDatePicker" :icon="Calendar" />
+              <div style="position: relative; display: inline-block;">
+                <el-button @click="showEndDatePicker" :icon="Calendar" />
+                <el-date-picker
+                  ref="endDatePickerRef"
+                  v-model="endDate"
+                  type="date"
+                  format="YYYY/MM/DD"
+                  value-format="YYYY-MM-DD"
+                  @change="handleEndDatePickerChange"
+                  :teleported="true"
+                  style="position: absolute; top: 0; left: 0; width: 1px; height: 100%; opacity: 0; cursor: pointer;"
+                />
+              </div>
             </template>
           </el-input>
-          <el-date-picker
-            ref="endDatePickerRef"
-            v-model="endDate"
-            type="date"
-            format="YYYY/MM/DD"
-            value-format="YYYY-MM-DD"
-            @change="handleEndDatePickerChange"
-            :teleported="true"
-            style="display: none"
-          />
         </div>
 
         <el-button @click="handleClearFilters">清除篩選</el-button>
@@ -182,14 +186,24 @@ const total = ref(0)
 // 顯示開始日期選擇器
 const showStartDatePicker = () => {
   if (startDatePickerRef.value) {
-    startDatePickerRef.value.focus()
+    // 嘗試使用 Element Plus 內部方法
+    if (typeof startDatePickerRef.value.handleOpen === 'function') {
+      startDatePickerRef.value.handleOpen()
+    } else if (typeof startDatePickerRef.value.focus === 'function') {
+      startDatePickerRef.value.focus()
+    }
   }
 }
 
 // 顯示結束日期選擇器
 const showEndDatePicker = () => {
   if (endDatePickerRef.value) {
-    endDatePickerRef.value.focus()
+    // 嘗試使用 Element Plus 內部方法
+    if (typeof endDatePickerRef.value.handleOpen === 'function') {
+      endDatePickerRef.value.handleOpen()
+    } else if (typeof endDatePickerRef.value.focus === 'function') {
+      endDatePickerRef.value.focus()
+    }
   }
 }
 
