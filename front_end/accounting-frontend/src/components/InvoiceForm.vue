@@ -7,30 +7,30 @@
     label-position="left"
   >
     <el-form-item label="發票日期" prop="invoiceDate">
-      <el-input
-        v-model="dateInputValue"
-        placeholder="可輸入 1141101 或選擇日期"
-        @blur="handleDateInputBlur"
-        @keydown.enter="handleDateInputEnter"
-        ref="dateInputRef"
-        style="width: 100%"
-      >
-        <template #suffix>
-          <el-date-picker
-            v-model="formData.invoiceDate"
-            type="date"
-            format="YYYY/MM/DD"
-            value-format="YYYY-MM-DD"
-            style="width: 32px"
-            @change="handleDatePickerChange"
-            :teleported="false"
-          >
-            <template #default>
-              <el-icon><Calendar /></el-icon>
-            </template>
-          </el-date-picker>
-        </template>
-      </el-input>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <el-input
+          :model-value="dateInputValue"
+          @update:model-value="handleDateInputChange"
+          placeholder="可輸入 1141101 或選擇日期"
+          @blur="handleDateInputBlur"
+          @keydown.enter="handleDateInputEnter"
+          ref="dateInputRef"
+          style="flex: 1"
+        />
+        <el-date-picker
+          v-model="datePickerValue"
+          type="date"
+          format="YYYY/MM/DD"
+          value-format="YYYY-MM-DD"
+          @change="handleDatePickerChange"
+          :teleported="false"
+          style="width: 40px"
+        >
+          <template #default>
+            <el-icon style="font-size: 18px"><Calendar /></el-icon>
+          </template>
+        </el-date-picker>
+      </div>
     </el-form-item>
 
     <el-form-item label="發票號碼" prop="invoiceNumber">
@@ -196,7 +196,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted, nextTick } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Delete, Calendar } from '@element-plus/icons-vue'
 import { customerApi, invoiceApi, type Invoice, type InvoiceItem } from '@/services/api'
@@ -229,9 +229,11 @@ const formRef = ref<FormInstance>()
 const dateInputRef = ref()
 const customerSelectRef = ref()
 const dateInputValue = ref('')
+const datePickerValue = ref('') // 日期選擇器的值
 const customersLoading = ref(false)
 const allCustomers = ref<any[]>([])
 const lastTypedCustomerCode = ref('') // 保存用户最后输入的代号
+let dateValidationTimer: NodeJS.Timeout | null = null // 日期驗證計時器
 
 // 日期限制相關
 const dateConstraints = ref<{
@@ -268,7 +270,26 @@ const formData = reactive<Invoice>({
 
 // 將民國年日期轉換為西元年日期
 // 支援格式：1141101 或 1101 (114年11月01日 或 11月01日，預設今年)
+// 也支援西元年格式：2026/01/03 或 2026-01-03
 const convertROCtoAD = (input: string): string | null => {
+  // 先檢查是否為西元年格式（包含 / 或 -）
+  if (input.includes('/') || input.includes('-')) {
+    const parts = input.split(/[\/-]/)
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10)
+      const month = parts[1].padStart(2, '0')
+      const day = parts[2].padStart(2, '0')
+
+      // 驗證是否為有效的西元年（大於 1911）
+      if (year > 1911) {
+        const date = new Date(`${year}-${month}-${day}`)
+        if (!isNaN(date.getTime())) {
+          return `${year}-${month}-${day}`
+        }
+      }
+    }
+  }
+
   // 移除所有空白和分隔符號
   const cleaned = input.replace(/[\s\-\/]/g, '')
 
@@ -327,7 +348,7 @@ const formatToROCDate = (dateStr: string): string => {
   return `${rocYear}/${month}/${day}`
 }
 
-// 檢查發票日期是否符合同字軌限制
+// 檢查發票日期是否符合前後一號的日期限制
 const validateInvoiceDateConstraints = async (): Promise<boolean> => {
   const invoiceNumber = formData.invoiceNumber
   const invoiceDate = formData.invoiceDate
@@ -339,26 +360,40 @@ const validateInvoiceDateConstraints = async (): Promise<boolean> => {
   if (!/^[A-Z]{2}\d{8}$/.test(invoiceNumber)) return true
 
   try {
-    const response = await invoiceApi.getDateConstraints(invoiceNumber)
+    // 如果是編輯模式且有 ID，傳遞 excludeId 參數以排除當前發票
+    const response = await invoiceApi.getDateConstraints(
+      invoiceNumber,
+      props.initialData?.id
+    )
     const constraints = response.data
     dateConstraints.value = constraints
 
-    // 檢查最小日期限制（前一張發票的日期）
+    console.log('=== 日期驗證 DEBUG ===')
+    console.log('invoiceDate:', invoiceDate, 'typeof:', typeof invoiceDate)
+    console.log('minDate:', constraints.minDate, 'typeof:', typeof constraints.minDate)
+    console.log('maxDate:', constraints.maxDate, 'typeof:', typeof constraints.maxDate)
+    console.log('invoiceDate < minDate?', invoiceDate < constraints.minDate)
+    console.log('invoiceDate > maxDate?', invoiceDate > constraints.maxDate)
+
+    // 檢查最小日期限制（前一號發票的日期）
+    // 例如：AA00000006 的日期必須 >= AA00000005 的日期
     if (constraints.minDate && invoiceDate < constraints.minDate) {
       ElMessage.error(
-        `發票日期不可早於前一張發票 ${constraints.prevInvoice?.invoiceNumber} 的日期 ${formatToROCDate(constraints.minDate)}`
+        `發票日期不可早於前一號發票 ${constraints.prevInvoice?.invoiceNumber} 的日期 ${formatToROCDate(constraints.minDate)}`
       )
       return false
     }
 
-    // 檢查最大日期限制（下一張發票的日期）
+    // 檢查最大日期限制（後一號發票的日期）
+    // 例如：AA00000006 的日期必須 <= AA00000007 的日期
     if (constraints.maxDate && invoiceDate > constraints.maxDate) {
       ElMessage.error(
-        `發票日期不可晚於後一張發票 ${constraints.nextInvoice?.invoiceNumber} 的日期 ${formatToROCDate(constraints.maxDate)}`
+        `發票日期不可晚於後一號發票 ${constraints.nextInvoice?.invoiceNumber} 的日期 ${formatToROCDate(constraints.maxDate)}`
       )
       return false
     }
 
+    console.log('日期驗證通過！')
     return true
   } catch (error) {
     console.error('檢查發票日期限制失敗:', error)
@@ -374,6 +409,28 @@ const handleInvoiceNumberBlur = async () => {
   // 如果日期已填寫，進行驗證
   if (formData.invoiceDate) {
     await validateInvoiceDateConstraints()
+  }
+}
+
+// 處理日期輸入變更（使用 :model-value 和 @update:model-value）
+const handleDateInputChange = (value: string) => {
+  console.log('=== handleDateInputChange 被觸發 ===')
+  console.log('接收到的 value:', value, 'typeof:', typeof value, 'isArray:', Array.isArray(value))
+  console.log('formData.invoiceDate BEFORE:', formData.invoiceDate, 'typeof:', typeof formData.invoiceDate, 'isArray:', Array.isArray(formData.invoiceDate))
+
+  // 更新 dateInputValue
+  dateInputValue.value = value
+
+  if (!value) {
+    formData.invoiceDate = ''
+    return
+  }
+
+  const convertedDate = convertROCtoAD(value)
+  if (convertedDate) {
+    formData.invoiceDate = convertedDate
+    console.log('handleDateInputChange: 更新 formData.invoiceDate 為', convertedDate)
+    console.log('formData.invoiceDate AFTER:', formData.invoiceDate, 'typeof:', typeof formData.invoiceDate, 'isArray:', Array.isArray(formData.invoiceDate))
   }
 }
 
@@ -397,9 +454,9 @@ const handleDateInputBlur = async () => {
 }
 
 // 處理日期輸入按下 Enter
-const handleDateInputEnter = (event: KeyboardEvent) => {
+const handleDateInputEnter = async (event: KeyboardEvent) => {
   event.preventDefault()
-  handleDateInputBlur()
+  await handleDateInputBlur()
 
   // 跳到發票號碼欄位
   const invoiceNumberInput = document.querySelector('input[placeholder*="發票號碼"]') as HTMLInputElement
@@ -411,6 +468,7 @@ const handleDateInputEnter = (event: KeyboardEvent) => {
 // 處理日期選擇器變更
 const handleDatePickerChange = async (value: string) => {
   if (value) {
+    formData.invoiceDate = value
     dateInputValue.value = value.replace(/-/g, '/')
 
     // 如果發票號碼已填寫，進行日期限制驗證
@@ -841,6 +899,32 @@ watch(
   }
 )
 
+// 監控 formData.invoiceDate 的變化，確保它永遠是 string
+watch(
+  () => formData.invoiceDate,
+  (newValue, oldValue) => {
+    console.log('=== formData.invoiceDate 變化偵測 ===')
+    console.log('OLD:', oldValue, 'typeof:', typeof oldValue, 'isArray:', Array.isArray(oldValue))
+    console.log('NEW:', newValue, 'typeof:', typeof newValue, 'isArray:', Array.isArray(newValue))
+    console.log('Stack trace:', new Error().stack)
+
+    // 如果變成 Array，強制轉換為 string
+    if (Array.isArray(newValue)) {
+      console.error('❌ formData.invoiceDate 變成了 Array！強制修正為 string')
+      // 使用 nextTick 確保在下一個 tick 修正
+      nextTick(() => {
+        if (Array.isArray(formData.invoiceDate)) {
+          formData.invoiceDate = Array.isArray(formData.invoiceDate) && formData.invoiceDate.length > 0
+            ? String(formData.invoiceDate[0])
+            : ''
+          console.log('已強制修正為:', formData.invoiceDate)
+        }
+      })
+    }
+  },
+  { deep: true }
+)
+
 // 發票號碼自動加一的函式
 const incrementInvoiceNumber = (invoiceNumber: string): string => {
   // 發票號碼格式：XX12345678（兩個英文字母 + 八位數字）
@@ -921,9 +1005,22 @@ onMounted(async () => {
   if (props.initialData) {
     Object.assign(formData, props.initialData)
 
-    // 更新日期顯示值
+    // 確保 invoiceDate 是 string 類型（防止 Array 問題）
     if (formData.invoiceDate) {
+      console.log('初始化 invoiceDate:', formData.invoiceDate, 'typeof:', typeof formData.invoiceDate, 'isArray:', Array.isArray(formData.invoiceDate))
+
+      // 如果是 Array，取第一個元素
+      if (Array.isArray(formData.invoiceDate)) {
+        console.error('❌ initialData.invoiceDate 是 Array！', formData.invoiceDate)
+        formData.invoiceDate = formData.invoiceDate.length > 0 ? String(formData.invoiceDate[0]) : ''
+      } else {
+        // 確保是 string
+        formData.invoiceDate = String(formData.invoiceDate)
+      }
+
       dateInputValue.value = formData.invoiceDate.replace(/-/g, '/')
+      console.log('初始化後 dateInputValue:', dateInputValue.value)
+      console.log('初始化後 formData.invoiceDate:', formData.invoiceDate)
     }
 
     // 轉換 items 中的數字欄位（從 API 回傳的可能是字串）

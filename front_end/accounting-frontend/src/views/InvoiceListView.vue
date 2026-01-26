@@ -313,11 +313,22 @@ const fetchInvoices = async () => {
     console.log('Invoice List:', invoiceList)
 
     invoiceList.forEach((invoice: Invoice) => {
+      console.log('處理發票:', invoice.invoiceNumber, 'invoiceDate:', invoice.invoiceDate, 'typeof:', typeof invoice.invoiceDate, 'isArray:', Array.isArray(invoice.invoiceDate))
+
+      // 確保 invoiceDate 是 string（防禦性編程）
+      let safeInvoiceDate: string = invoice.invoiceDate
+      if (Array.isArray(invoice.invoiceDate)) {
+        console.error('❌ 發票日期是 Array！', invoice.invoiceNumber, invoice.invoiceDate)
+        safeInvoiceDate = invoice.invoiceDate.length > 0 ? String(invoice.invoiceDate[0]) : ''
+      } else if (invoice.invoiceDate) {
+        safeInvoiceDate = String(invoice.invoiceDate)
+      }
+
       // 處理作廢發票（沒有商品項目）
       if (invoice.isVoided || !invoice.items || invoice.items.length === 0) {
         flatInvoices.push({
           id: invoice.id,
-          invoiceDate: invoice.invoiceDate,
+          invoiceDate: safeInvoiceDate,
           invoiceNumber: invoice.invoiceNumber,
           buyer: invoice.buyer || '',
           isVoided: invoice.isVoided,
@@ -338,7 +349,7 @@ const fetchInvoices = async () => {
         invoice.items.forEach((item: any, index: number) => {
           flatInvoices.push({
             id: invoice.id,
-            invoiceDate: index === 0 ? invoice.invoiceDate : '', // 只在第一個商品顯示發票資訊
+            invoiceDate: index === 0 ? safeInvoiceDate : '', // 只在第一個商品顯示發票資訊
             invoiceNumber: index === 0 ? invoice.invoiceNumber : '',
             buyer: index === 0 ? invoice.buyer : '',
             isVoided: false,
