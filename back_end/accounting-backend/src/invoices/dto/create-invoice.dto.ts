@@ -28,6 +28,14 @@ export class CreateInvoiceDto {
   @IsOptional()
   isVoided?: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  isBlank?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  isDualFormat?: boolean;
+
   @IsString()
   @IsOptional()
   customerCode?: string;

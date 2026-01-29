@@ -44,11 +44,21 @@
     </el-form-item>
 
     <el-form-item label="作廢發票">
-      <el-switch v-model="formData.isVoided" @change="handleVoidedChange" />
+      <el-switch v-model="formData.isVoided" @change="handleVoidedChange" :disabled="formData.isBlank" />
       <span class="void-hint">勾選此項表示此發票為作廢發票，不需填寫客戶及商品資料</span>
     </el-form-item>
 
-    <el-form-item label="客戶代號" prop="customerCode" v-if="!formData.isVoided">
+    <el-form-item label="空白發票">
+      <el-switch v-model="formData.isBlank" @change="handleBlankChange" :disabled="formData.isVoided" />
+      <span class="void-hint">勾選此項表示此發票為空白發票，僅需填寫日期與發票號碼</span>
+    </el-form-item>
+
+    <el-form-item label="二聯式發票" v-if="!formData.isVoided && !formData.isBlank">
+      <el-switch v-model="formData.isDualFormat" @change="handleDualFormatChange" />
+      <span class="void-hint">勾選此項表示輸入的金額為含稅金額，系統將自動反推未稅金額</span>
+    </el-form-item>
+
+    <el-form-item label="客戶代號" prop="customerCode" v-if="!formData.isVoided && !formData.isBlank">
       <el-select
         v-model="formData.customerCode"
         filterable
@@ -68,14 +78,14 @@
       </el-select>
     </el-form-item>
 
-    <el-form-item label="買受人" prop="buyer" v-if="!formData.isVoided">
+    <el-form-item label="買受人" prop="buyer" v-if="!formData.isVoided && !formData.isBlank">
       <el-input v-model="formData.buyer" placeholder="請輸入買受人" />
     </el-form-item>
 
-    <el-divider content-position="left" v-if="!formData.isVoided">商品明細</el-divider>
+    <el-divider content-position="left" v-if="!formData.isVoided && !formData.isBlank">商品明細</el-divider>
 
     <div
-      v-if="!formData.isVoided"
+      v-if="!formData.isVoided && !formData.isBlank"
       v-for="(item, index) in formData.items"
       :key="index"
       class="item-row"
@@ -169,13 +179,13 @@
       </el-card>
     </div>
 
-    <el-button v-if="!formData.isVoided" type="primary" :icon="Plus" @click="addItem" class="add-btn"
+    <el-button v-if="!formData.isVoided && !formData.isBlank" type="primary" :icon="Plus" @click="addItem" class="add-btn"
       >新增商品</el-button
     >
 
-    <el-divider content-position="left" v-if="!formData.isVoided">金額統計</el-divider>
+    <el-divider content-position="left" v-if="!formData.isVoided && !formData.isBlank">金額統計</el-divider>
 
-    <el-descriptions v-if="!formData.isVoided" :column="1" border class="amount-summary">
+    <el-descriptions v-if="!formData.isVoided && !formData.isBlank" :column="1" border class="amount-summary">
       <el-descriptions-item label="未稅金額">
         <span class="amount-value">NT$ {{ Math.round(formData.taxExcludedAmount || 0).toLocaleString() }}</span>
       </el-descriptions-item>
@@ -277,7 +287,9 @@ const formData = reactive<Invoice>({
   taxExcludedAmount: 0,
   tax: 0,
   taxIncludedAmount: 0,
-  isVoided: false
+  isVoided: false,
+  isBlank: false,
+  isDualFormat: false
 })
 
 // 將民國年日期轉換為西元年日期
@@ -580,7 +592,23 @@ const rules: FormRules = {
       trigger: 'blur'
     }
   ],
-  buyer: [{ required: true, message: '請輸入買受人', trigger: 'blur' }]
+  buyer: [
+    {
+      required: true,
+      message: '請輸入買受人',
+      trigger: 'blur',
+      validator: (rule, value, callback) => {
+        // 如果是作廢或空白發票，不需要驗證買受人
+        if (formData.isVoided || formData.isBlank) {
+          callback()
+        } else if (!value) {
+          callback(new Error('請輸入買受人'))
+        } else {
+          callback()
+        }
+      }
+    }
+  ]
 }
 
 const itemRules = {
@@ -607,20 +635,39 @@ const calculateUnitPrice = (item: InvoiceItem) => {
 
 // 計算總金額（四捨五入取整數）
 const calculateTotals = () => {
-  // 未稅金額 = 所有商品的金額加總（四捨五入取整數）
-  const taxExcludedAmount = Math.round(
-    formData.items.reduce((sum, item) => sum + (item.amount || 0), 0)
-  )
+  if (formData.isDualFormat) {
+    // 二聯式發票：用戶輸入的是含稅金額，需要反推未稅金額
+    // 含稅金額 = 所有商品的金額加總（四捨五入取整數）
+    const taxIncludedAmount = Math.round(
+      formData.items.reduce((sum, item) => sum + (item.amount || 0), 0)
+    )
 
-  // 稅金 = 未稅金額 × 0.05（四捨五入取整數）
-  const tax = Math.round(taxExcludedAmount * 0.05)
+    // 未稅金額 = 含稅金額 / 1.05（四捨五入取整數）
+    const taxExcludedAmount = Math.round(taxIncludedAmount / 1.05)
 
-  // 含稅金額 = 未稅金額 + 稅金
-  const taxIncludedAmount = taxExcludedAmount + tax
+    // 稅金 = 含稅金額 - 未稅金額
+    const tax = taxIncludedAmount - taxExcludedAmount
 
-  formData.taxExcludedAmount = taxExcludedAmount
-  formData.tax = tax
-  formData.taxIncludedAmount = taxIncludedAmount
+    formData.taxExcludedAmount = taxExcludedAmount
+    formData.tax = tax
+    formData.taxIncludedAmount = taxIncludedAmount
+  } else {
+    // 一般發票：用戶輸入的是未稅金額
+    // 未稅金額 = 所有商品的金額加總（四捨五入取整數）
+    const taxExcludedAmount = Math.round(
+      formData.items.reduce((sum, item) => sum + (item.amount || 0), 0)
+    )
+
+    // 稅金 = 未稅金額 × 0.05（四捨五入取整數）
+    const tax = Math.round(taxExcludedAmount * 0.05)
+
+    // 含稅金額 = 未稅金額 + 稅金
+    const taxIncludedAmount = taxExcludedAmount + tax
+
+    formData.taxExcludedAmount = taxExcludedAmount
+    formData.tax = tax
+    formData.taxIncludedAmount = taxIncludedAmount
+  }
 }
 
 // 新增商品項目
@@ -661,6 +708,41 @@ const handleVoidedChange = (value: boolean) => {
         amountDisplay: ''
       }
     ]
+  }
+}
+
+// 處理空白發票切換
+const handleBlankChange = (value: boolean) => {
+  if (value) {
+    // 切換為空白發票時，清空不需要的欄位
+    formData.customerCode = ''
+    formData.buyer = ''
+    formData.items = []
+    formData.taxExcludedAmount = 0
+    formData.tax = 0
+    formData.taxIncludedAmount = 0
+  } else {
+    // 切換回正常發票時，初始化商品項目
+    formData.items = [
+      {
+        productName: '',
+        quantity: null as any,
+        quantityDisplay: '',
+        amount: null as any,
+        amountDisplay: ''
+      }
+    ]
+  }
+}
+
+// 處理二聯式發票切換
+const handleDualFormatChange = (value: boolean) => {
+  // 切換時重新計算金額
+  calculateTotals()
+  if (value) {
+    ElMessage.info('已切換為二聯式發票，請輸入含稅金額')
+  } else {
+    ElMessage.info('已切換為一般發票，請輸入未稅金額')
   }
 }
 
@@ -801,8 +883,8 @@ const handleCustomerCodeEnterKey = async (event: KeyboardEvent) => {
 const handleSubmit = async () => {
   if (!formRef.value) return
 
-  // 先驗證日期限制
-  if (!formData.isVoided) {
+  // 先驗證日期限制（作廢和空白發票不需驗證）
+  if (!formData.isVoided && !formData.isBlank) {
     const isDateValid = await validateInvoiceDateConstraints()
     if (!isDateValid) {
       return
@@ -811,8 +893,8 @@ const handleSubmit = async () => {
 
   await formRef.value.validate((valid) => {
     if (valid) {
-      // 如果是作廢發票，確保相關欄位為空
-      if (formData.isVoided) {
+      // 如果是作廢發票或空白發票，確保相關欄位為空
+      if (formData.isVoided || formData.isBlank) {
         emit('submit', {
           ...formData,
           customerCode: undefined,
@@ -906,6 +988,8 @@ const resetFormWithIncrementedInvoiceNumber = () => {
   formData.tax = 0
   formData.taxIncludedAmount = 0
   formData.isVoided = false
+  formData.isBlank = false
+  formData.isDualFormat = false
 
   // 發票號碼自動加一
   formData.invoiceNumber = incrementInvoiceNumber(currentInvoiceNumber)

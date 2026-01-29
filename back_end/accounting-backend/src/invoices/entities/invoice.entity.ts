@@ -22,6 +22,12 @@ export class Invoice {
   @Column({ type: 'boolean', default: false, comment: '是否作廢' })
   isVoided: boolean;
 
+  @Column({ type: 'boolean', default: false, comment: '是否空白' })
+  isBlank: boolean;
+
+  @Column({ type: 'boolean', default: false, comment: '是否為二聯式發票' })
+  isDualFormat: boolean;
+
   @Column({ type: 'varchar', length: 20, nullable: true, comment: '客戶代號' })
   customerCode: string;
 

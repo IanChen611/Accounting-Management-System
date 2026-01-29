@@ -89,52 +89,60 @@
         border
         style="width: 100%"
       >
-        <el-table-column prop="invoiceDate" label="發票日期" width="120">
+        <el-table-column prop="invoiceDate" label="發票日期" width="110">
           <template #default="{ row }">
             <span v-if="row.isVoided" class="voided-mark">作廢</span>
             <span v-else>{{ row.invoiceDate }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="invoiceNumber" label="發票號碼" width="150" />
-        <el-table-column label="狀態" width="80">
+        <el-table-column prop="invoiceNumber" label="發票號碼" width="130" />
+        <el-table-column label="聯式" width="85" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="!row.isVoided && !row.isBlank" :type="row.isDualFormat ? 'warning' : 'primary'" size="small">
+              {{ row.isDualFormat ? '二聯式' : '三聯式' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="狀態" width="75">
           <template #default="{ row }">
             <el-tag v-if="row.isVoided" type="danger" size="small">作廢</el-tag>
+            <el-tag v-else-if="row.isBlank" type="info" size="small">空白</el-tag>
             <el-tag v-else type="success" size="small">正常</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="buyer" label="買受人" width="150" />
-        <el-table-column prop="productName" label="品名" />
+        <el-table-column prop="buyer" label="買受人" width="130" />
+        <el-table-column prop="productName" label="品名" width="100" />
         <el-table-column prop="quantity" label="數量" width="80" align="right">
           <template #default="{ row }">
             {{ row.quantity !== null && row.quantity !== undefined ? Number(row.quantity).toLocaleString() : '' }}
           </template>
         </el-table-column>
-        <el-table-column prop="unitPrice" label="單價" width="100" align="right">
+        <el-table-column prop="unitPrice" label="單價" width="120" align="right">
           <template #default="{ row }">
             {{ row.unitPrice !== null && row.unitPrice !== undefined ? Number(row.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '' }}
           </template>
         </el-table-column>
-        <el-table-column prop="amount" label="金額" width="120" align="right">
+        <el-table-column prop="amount" label="金額" width="110" align="right">
           <template #default="{ row }">
             {{ row.amount !== null && row.amount !== undefined ? Math.round(Number(row.amount)).toLocaleString() : '' }}
           </template>
         </el-table-column>
-        <el-table-column label="未稅金額" width="100" align="right">
+        <el-table-column label="未稅金額" width="105" align="right">
           <template #default="{ row }">
             {{ row.taxExcludedAmount !== null && row.taxExcludedAmount !== undefined ? Math.round(Number(row.taxExcludedAmount)).toLocaleString() : '' }}
           </template>
         </el-table-column>
-        <el-table-column label="稅金" width="100" align="right">
+        <el-table-column label="稅金" width="90" align="right">
           <template #default="{ row }">
             {{ row.tax !== null && row.tax !== undefined ? Math.round(Number(row.tax)).toLocaleString() : '' }}
           </template>
         </el-table-column>
-        <el-table-column label="含稅金額" width="120" align="right">
+        <el-table-column label="含稅金額" width="110" align="right">
           <template #default="{ row }">
             {{ row.taxIncludedAmount !== null && row.taxIncludedAmount !== undefined ? Math.round(Number(row.taxIncludedAmount)).toLocaleString() : '' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="163" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="handleEdit(row)">
               編輯
@@ -337,9 +345,9 @@ const updateDateRange = () => {
 
 // 合併儲存格方法
 const objectSpanMethod = ({ row, column, rowIndex, columnIndex }: any) => {
-  // 需要合併的欄位：發票日期(0)、發票號碼(1)、狀態(2)、買受人(3)、未稅金額(8)、稅金(9)、含稅金額(10)、操作(11)
-  // 品名(4)、數量(5)、單價(6)、金額(7) 不合併，每個商品都分別顯示
-  const mergeColumns = [0, 1, 2, 3, 8, 9, 10, 11]
+  // 需要合併的欄位：發票日期(0)、發票號碼(1)、聯式(2)、狀態(3)、買受人(4)、未稅金額(9)、稅金(10)、含稅金額(11)、操作(12)
+  // 品名(5)、數量(6)、單價(7)、金額(8) 不合併，每個商品都分別顯示
+  const mergeColumns = [0, 1, 2, 3, 4, 9, 10, 11, 12]
 
   if (mergeColumns.includes(columnIndex)) {
     // 如果是第一個商品項目，顯示並合併
@@ -402,14 +410,16 @@ const fetchInvoices = async () => {
         safeInvoiceDate = String(invoice.invoiceDate)
       }
 
-      // 處理作廢發票（沒有商品項目）
-      if (invoice.isVoided || !invoice.items || invoice.items.length === 0) {
+      // 處理作廢發票或空白發票（沒有商品項目）
+      if (invoice.isVoided || invoice.isBlank || !invoice.items || invoice.items.length === 0) {
         flatInvoices.push({
           id: invoice.id,
           invoiceDate: safeInvoiceDate,
           invoiceNumber: invoice.invoiceNumber,
           buyer: invoice.buyer || '',
           isVoided: invoice.isVoided,
+          isBlank: invoice.isBlank,
+          isDualFormat: invoice.isDualFormat || false,
           productName: '',
           quantity: null,
           unitPrice: null,
@@ -431,6 +441,8 @@ const fetchInvoices = async () => {
             invoiceNumber: index === 0 ? invoice.invoiceNumber : '',
             buyer: index === 0 ? invoice.buyer : '',
             isVoided: false,
+            isBlank: false,
+            isDualFormat: invoice.isDualFormat || false,
             productName: item.productName,
             quantity: item.quantity,
             unitPrice: item.unitPrice,

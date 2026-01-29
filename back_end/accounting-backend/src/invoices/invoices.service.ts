@@ -19,25 +19,47 @@ export class InvoicesService {
   // 商品邏輯：金額除以數量等於單價，未稅金額等於該發票的商品金額加總
   // 稅金等於未稅金額乘0.05，含稅金額等於未稅金額加上稅金
   // 所有金額四捨五入取整數
-  private calculateInvoiceAmounts(items: InvoiceItem[]) {
+  // 如果是二聯式發票，商品金額為含稅價，需反推未稅金額
+  private calculateInvoiceAmounts(items: InvoiceItem[], isDualFormat: boolean = false) {
     const TAX_RATE = 0.05;
 
-    // 未稅金額 = 所有商品的金額加總（四捨五入取整數）
-    const taxExcludedAmount = Math.round(
-      items.reduce((sum, item) => sum + Number(item.amount), 0),
-    );
+    if (isDualFormat) {
+      // 二聯式發票：商品金額為含稅價，需反推未稅金額
+      // 含稅金額 = 所有商品的金額加總（四捨五入取整數）
+      const taxIncludedAmount = Math.round(
+        items.reduce((sum, item) => sum + Number(item.amount), 0),
+      );
 
-    // 稅金 = 未稅金額 × 0.05（四捨五入取整數）
-    const tax = Math.round(taxExcludedAmount * TAX_RATE);
+      // 未稅金額 = 含稅金額 / 1.05（四捨五入取整數）
+      const taxExcludedAmount = Math.round(taxIncludedAmount / 1.05);
 
-    // 含稅金額 = 未稅金額 + 稅金
-    const taxIncludedAmount = taxExcludedAmount + tax;
+      // 稅金 = 含稅金額 - 未稅金額
+      const tax = taxIncludedAmount - taxExcludedAmount;
 
-    return {
-      taxExcludedAmount,
-      tax,
-      taxIncludedAmount,
-    };
+      return {
+        taxExcludedAmount,
+        tax,
+        taxIncludedAmount,
+      };
+    } else {
+      // 一般發票：商品金額為未稅價
+      // 未稅金額 = 所有商品的金額加總（四捨五入取整數）
+      const taxExcludedAmount = Math.round(
+        items.reduce((sum, item) => sum + Number(item.amount), 0),
+      );
+
+      // 稅金 = 未稅金額 × 0.05（四捨五入取整數）
+      const tax = Math.round(taxExcludedAmount * TAX_RATE);
+
+      // 含稅金額 = 未稅金額 + 稅金
+      const taxIncludedAmount = taxExcludedAmount + tax;
+
+      return {
+        taxExcludedAmount,
+        tax,
+        taxIncludedAmount,
+      };
+    }
   }
 
   // 計算每個商品的單價
@@ -49,18 +71,22 @@ export class InvoicesService {
 
   async create(createInvoiceDto: CreateInvoiceDto): Promise<Invoice> {
     const isVoided = createInvoiceDto.isVoided || false;
+    const isBlank = createInvoiceDto.isBlank || false;
+    const isDualFormat = createInvoiceDto.isDualFormat || false;
 
     // 建立發票主體
     const invoice = this.invoicesRepository.create({
       invoiceDate: createInvoiceDto.invoiceDate,
       invoiceNumber: createInvoiceDto.invoiceNumber,
       isVoided: isVoided,
-      customerCode: isVoided ? undefined : createInvoiceDto.customerCode,
-      buyer: isVoided ? '' : (createInvoiceDto.buyer || ''),
+      isBlank: isBlank,
+      isDualFormat: isDualFormat,
+      customerCode: (isVoided || isBlank) ? undefined : createInvoiceDto.customerCode,
+      buyer: (isVoided || isBlank) ? '' : (createInvoiceDto.buyer || ''),
     });
 
-    // 如果是作廢發票，不需要商品和金額
-    if (isVoided) {
+    // 如果是作廢發票或空白發票，不需要商品和金額
+    if (isVoided || isBlank) {
       invoice.taxExcludedAmount = 0;
       invoice.tax = 0;
       invoice.taxIncludedAmount = 0;
@@ -81,8 +107,8 @@ export class InvoicesService {
         });
       });
 
-      // 計算發票總金額
-      const amounts = this.calculateInvoiceAmounts(items);
+      // 計算發票總金額（根據是否為二聯式發票）
+      const amounts = this.calculateInvoiceAmounts(items, isDualFormat);
 
       // 將計算結果賦值給發票
       invoice.taxExcludedAmount = amounts.taxExcludedAmount;
@@ -186,6 +212,15 @@ export class InvoicesService {
     if (updateInvoiceDto.invoiceNumber !== undefined) {
       invoice.invoiceNumber = updateInvoiceDto.invoiceNumber;
     }
+    if (updateInvoiceDto.isVoided !== undefined) {
+      invoice.isVoided = updateInvoiceDto.isVoided;
+    }
+    if (updateInvoiceDto.isBlank !== undefined) {
+      invoice.isBlank = updateInvoiceDto.isBlank;
+    }
+    if (updateInvoiceDto.isDualFormat !== undefined) {
+      invoice.isDualFormat = updateInvoiceDto.isDualFormat;
+    }
     if (updateInvoiceDto.customerCode !== undefined) {
       invoice.customerCode = updateInvoiceDto.customerCode;
     }
@@ -216,8 +251,8 @@ export class InvoicesService {
         });
       });
 
-      // 計算新的總金額
-      const amounts = this.calculateInvoiceAmounts(newItems);
+      // 計算新的總金額（根據是否為二聯式發票）
+      const amounts = this.calculateInvoiceAmounts(newItems, invoice.isDualFormat);
       invoice.taxExcludedAmount = amounts.taxExcludedAmount;
       invoice.tax = amounts.tax;
       invoice.taxIncludedAmount = amounts.taxIncludedAmount;

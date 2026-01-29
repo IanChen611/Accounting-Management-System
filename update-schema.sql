@@ -20,6 +20,24 @@ PREPARE alterIfNotExists FROM @preparedStatement;
 EXECUTE alterIfNotExists;
 DEALLOCATE PREPARE alterIfNotExists;
 
+-- 檢查並新增 invoices.isBlank 欄位
+SET @tablename = 'invoices';
+SET @columnname = 'isBlank';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      TABLE_SCHEMA = @dbname
+      AND TABLE_NAME = @tablename
+      AND COLUMN_NAME = @columnname
+  ) > 0,
+  'SELECT ''Column isBlank already exists'' AS msg;',
+  'ALTER TABLE invoices ADD COLUMN isBlank TINYINT(1) NOT NULL DEFAULT 0 COMMENT ''是否空白'' AFTER isVoided;'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
 -- 檢查並新增 customers.zipCode 欄位
 SET @tablename = 'customers';
 SET @columnname = 'zipCode';
@@ -33,6 +51,24 @@ SET @preparedStatement = (SELECT IF(
   ) > 0,
   'SELECT ''Column zipCode already exists'' AS msg;',
   'ALTER TABLE customers ADD COLUMN zipCode VARCHAR(10) NULL COMMENT ''郵遞區號'' AFTER name;'
+));
+PREPARE alterIfNotExists FROM @preparedStatement;
+EXECUTE alterIfNotExists;
+DEALLOCATE PREPARE alterIfNotExists;
+
+-- 檢查並新增 invoices.isDualFormat 欄位
+SET @tablename = 'invoices';
+SET @columnname = 'isDualFormat';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      TABLE_SCHEMA = @dbname
+      AND TABLE_NAME = @tablename
+      AND COLUMN_NAME = @columnname
+  ) > 0,
+  'SELECT ''Column isDualFormat already exists'' AS msg;',
+  'ALTER TABLE invoices ADD COLUMN isDualFormat TINYINT(1) NOT NULL DEFAULT 0 COMMENT ''是否為二聯式發票'' AFTER isBlank;'
 ));
 PREPARE alterIfNotExists FROM @preparedStatement;
 EXECUTE alterIfNotExists;

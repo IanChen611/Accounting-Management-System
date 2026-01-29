@@ -21,6 +21,8 @@ export interface Invoice {
   tax?: number
   taxIncludedAmount?: number
   isVoided?: boolean
+  isBlank?: boolean
+  isDualFormat?: boolean
   createdAt?: string
   updatedAt?: string
 }
