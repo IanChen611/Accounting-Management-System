@@ -37,6 +37,7 @@
       <el-input
         v-model="formData.invoiceNumber"
         placeholder="請輸入發票號碼（格式：XX12345678）"
+        @input="handleInvoiceNumberInput"
         @blur="handleInvoiceNumberBlur"
         @keydown.enter="handleInvoiceNumberEnter"
       />
@@ -392,10 +393,39 @@ const validateInvoiceDateConstraints = async (): Promise<boolean> => {
   }
 }
 
+// 發票號碼格式
+const INVOICE_NUMBER_PATTERN = /^[A-Z]{2}\d{8}$/
+
+// 正規化發票號碼：移除所有空白（含從 Excel 貼上帶進來的空白）並轉為大寫
+const normalizeInvoiceNumber = (value: string | undefined | null): string => {
+  return (value ?? '').replace(/\s/g, '').toUpperCase()
+}
+
+// 以目前的值重新驗證發票號碼，避免非同步流程留下過期的錯誤訊息
+const revalidateInvoiceNumber = () => {
+  formRef.value?.validateField('invoiceNumber').catch(() => {})
+}
+
+// 處理發票號碼輸入（即時正規化，並在格式正確時清掉舊的錯誤訊息）
+const handleInvoiceNumberInput = (value: string) => {
+  const normalized = normalizeInvoiceNumber(value)
+  if (normalized !== formData.invoiceNumber) {
+    formData.invoiceNumber = normalized
+  }
+
+  // 只在已經是合法格式時清除錯誤，避免打字途中就跳紅字
+  if (INVOICE_NUMBER_PATTERN.test(formData.invoiceNumber)) {
+    formRef.value?.clearValidate('invoiceNumber')
+  }
+}
+
 // 處理發票號碼輸入完成（blur 事件）
 const handleInvoiceNumberBlur = async () => {
-  // 自動轉換為大寫
-  formData.invoiceNumber = formData.invoiceNumber.toUpperCase()
+  // 移除空白並自動轉換為大寫
+  formData.invoiceNumber = normalizeInvoiceNumber(formData.invoiceNumber)
+
+  // 用正規化後的值重新驗證，確保畫面上的錯誤狀態與實際值一致
+  revalidateInvoiceNumber()
 
   // 如果日期已填寫，進行驗證
   if (formData.invoiceDate) {
@@ -406,13 +436,21 @@ const handleInvoiceNumberBlur = async () => {
 // 處理發票號碼按下 Enter
 const handleInvoiceNumberEnter = async (event: KeyboardEvent) => {
   event.preventDefault()
-  // 先執行 blur 邏輯
-  await handleInvoiceNumberBlur()
 
-  // 如果不是作廢發票，跳到客戶代號欄位
+  // 輸入法組字中按 Enter 只是確認候選字，不應該跳欄
+  if (event.isComposing) return
+
+  formData.invoiceNumber = normalizeInvoiceNumber(formData.invoiceNumber)
+
+  // 如果不是作廢發票，先跳到客戶代號欄位
+  // 焦點移動會觸發 blur，格式驗證與日期限制檢查由 handleInvoiceNumberBlur 處理，
+  // 不要在這裡先等待 API，否則會與 blur 的驗證搶時序而留下過期的錯誤訊息
   if (!formData.isVoided && customerSelectRef.value) {
     customerSelectRef.value.focus()
+    return
   }
+
+  await handleInvoiceNumberBlur()
 }
 
 // 處理日期輸入失焦
@@ -587,9 +625,9 @@ const rules: FormRules = {
   invoiceNumber: [
     { required: true, message: '請輸入發票號碼', trigger: 'blur' },
     {
-      pattern: /^[A-Z]{2}\d{8}$/,
+      pattern: INVOICE_NUMBER_PATTERN,
       message: '發票號碼格式錯誤，必須為兩個英文字母加八位數字（例如：AB12345678）',
-      trigger: 'blur'
+      trigger: ['blur', 'change']
     }
   ],
   buyer: [
